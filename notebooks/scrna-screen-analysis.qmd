@@ -10,57 +10,25 @@ suppressPackageStartupMessages({
   library(readxl)
   library(Nebulosa)
   library(ComplexHeatmap)
+  library(here)
+  library(singleCellTK)
+  library(ggrepel)
+  library(ggpubr)
 })
 ```
 
 ```{r}
-raw_dat <- read_csv("../data/singlecells.csv")
-```
-```{r}
-metal_target_map <- read_excel("../data/antigen-metal-map-simon.xlsx")
+sce <- readRDS(here("data/sce_screen_subsample.rds"))
 ```
 
 ```{r}
-colnames(raw_dat) <- plyr::mapvalues(colnames(raw_dat), from = metal_target_map$metal, to = metal_target_map$target)
+reducedDim(sce,'UMAP') <- reducedDim(sce, 'seuratUMAP')
 ```
 
-```{r}
-lc <- select(raw_dat, CD66b:CD4) |> 
-  as.matrix() |> 
-  t()
-cd <- select(raw_dat, Nd148Di:target)
 
-sce <- SingleCellExperiment(
-  assays = list(
-    counts = lc,
-    logcounts = log1p(lc)
-  ),
-  colData = cd
-)
-```
-
-Subsample to make this manageable for now:
 
 ```{r}
-
-colnames(sce) <- paste0("cell_", seq_len(ncol(sce)))
-```
-
-```{r}
-assay(sce, 'seuratNormData') <- assay(sce, 'logcounts')
-sce <- singleCellTK::runSeuratScaleData(sce)
-
-sce <- singleCellTK::runSeuratPCA(sce)
-
-sce <- singleCellTK::runSeuratFindClusters(sce, resolution = 0.3)
-
-set.seed(123L)
-sce_subsample <- sce[, sample(ncol(sce), 1e5)]
-sce_subsample <- runUMAP(sce_subsample, dimred='seuratPCA')
-```
-
-```{r}
-plotUMAP(sce, colour_by = "Seurat_louvain_Resolution0.3")
+plotUMAP(sce, colorBy = "Seurat_louvain_Resolution0.5")
 ```
 
 ```{r}
@@ -68,112 +36,67 @@ plotUMAP(sce, colour_by = "Seurat_louvain_Resolution0.3")
 plot_density(sce, features = rownames(sce))
 ```
 ```{r}
-plotExpression(sce, x= "Seurat_louvain_Resolution0.8", features = rownames(sce))
+scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resolution0.5", center=TRUE, scale=TRUE)
+```
+```{r}
+scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resolution0.5", zlim = c(2, 5))
 ```
 
-# Try to make a plot of the remainder channels
+# Let's do a deep dive on something relatively easy - CD8 Ts
 
 ```{r}
-cluster_mapping <- read_excel("../data/simon-cluster-interpretation.xlsx")
-cluster_mapping$cluster <- as.character(cluster_mapping$cluster)
+sce_full <- readRDS(here("data/sce_screen_full.rds"))
 ```
 
 ```{r}
-dfsc <- colData(sce) |> 
+## Cluster 2 is CD8s
+
+dfsc <- colData(sce_full) |> 
   as.data.frame() |> 
-  select(cluster = `Seurat_louvain_Resolution0.3`,
-         expression = Nd148Di,
+         select(expression = Nd148Di,
+                cluster = predicted_label,
          target) |> 
-  as_tibble() |> 
-  inner_join(cluster_mapping)
+  as_tibble() 
 
 dfsc <- filter(dfsc, !is.na(target))
+
 ```
 
 ```{r}
-dfs <- group_by(dfsc, cluster, label, target) |> 
-  summarize(mean_expression = mean(log1p(expression)),
-            sd_expression = sd(log1p(expression))) |> 
+dfsum <- group_by(dfsc, target, cluster) |> 
+  summarize(expr_mean = mean(log1p(expression)),
+            expr_sd = sd(log1p(expression))) |> 
   ungroup()
 ```
 
 ```{r}
-filter(dfs, mean_expression > 2) |> 
-ggplot(aes(y = target, x = label)) +
-  geom_point(aes(size = mean_expression, color = mean_expression)) +
-  scale_color_viridis_c() +
-  ggpubr::theme_pubclean() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
-
+dfcd8 <- filter(dfsum, cluster == "2")
+ggplot(dfcd8, aes(x = expr_mean, y = expr_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = target), data = filter(dfcd8, expr_sd > 1)) +
+  geom_label_repel(aes(label = target), data = filter(dfcd8, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression",
+       subtitle = "Marker variance within CD8 T cells")
+  
 ```
 
 ```{r}
-ggsave("../figs/cytomarker/mean_expression_by_cluster.png", width=6, height=12)
+dfcd20 <- filter(dfsum, cluster == "7")
+ggplot(dfcd20, aes(x = expr_mean, y = expr_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = target), data = filter(dfcd20, expr_sd > 1.4)) +
+  geom_label_repel(aes(label = target), data = filter(dfcd20, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression",
+       subtitle = "Marker variance within B cells")
 ```
 
 
 
 
-```{r}
-filter(dfs, sd_expression > 50) |> 
-ggplot(aes(y = target, x = label)) +
-  geom_point(aes(size = sd_expression, color = sd_expression)) +
-  scale_color_viridis_c() +
-  ggpubr::theme_pubclean() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
-
-```
-
-```{r}
-ggsave("../figs/cytomarker/sd_expression_by_cluster.png", width=6, height=12)
-```
-
-```{r}
-ggplot(dfs, aes(x = mean_expression, y = sd_expression)) +
-  geom_point()
-```
+# Contrast this to scRNA-seq PBMC data
 
 
-```{r}
-dfs01 <- group_by(dfs, target) |> 
-  mutate(mean_expression_norm = (mean_expression - min(mean_expression)) / (max(mean_expression) - min(mean_expression)))
-```
 
-```{r}
-mat01 <- select(dfs01, label, target, mean_expression_norm) |> 
-  ungroup() |> 
- tidyr::spread(target, mean_expression_norm, fill = 0) |> 
-  column_to_rownames('label') |> 
-  as.matrix()
-```
-
-```{r}
-hm <- Heatmap(mat01,
-        column_names_gp = gpar(fontsize = 4))
-draw(hm)
-```
-```{r}
-pdf("../figs/cytomarker/avg_expression.pdf", width=16, height=4)
-draw(hm)
-dev.off()
-```
-
-```{r}
-dfnorm <- group_by(dfsc, target, label) |> 
-  mutate(expression_log = log1p(expression)) |> 
-  mutate(expression_norm = (expression_log - min(expression_log)) / (max(expression_log) - min(expression_log)))
-
-
-dfnorm_sum <- dfnorm |> 
-  summarize(
-    expression_norm_mean = mean(expression_norm, na.rm=T),
-    expression_norm_sd = sd(expression_norm)
-  )
-
-```
-
-```{r}
-ggplot(dfnorm_sum, aes(x = expression_norm_mean, y = expression_norm_sd)) +
-  geom_point()
-```
 
