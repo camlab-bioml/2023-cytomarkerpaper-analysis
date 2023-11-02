@@ -1,0 +1,179 @@
+---
+title: "Full single-cell analysis"
+format: html
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(SingleCellExperiment)
+  library(readxl)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+})
+```
+
+```{r}
+raw_dat <- read_csv("../data/singlecells.csv")
+```
+```{r}
+metal_target_map <- read_excel("../data/antigen-metal-map-simon.xlsx")
+```
+
+```{r}
+colnames(raw_dat) <- plyr::mapvalues(colnames(raw_dat), from = metal_target_map$metal, to = metal_target_map$target)
+```
+
+```{r}
+lc <- select(raw_dat, CD66b:CD4) |> 
+  as.matrix() |> 
+  t()
+cd <- select(raw_dat, Nd148Di:target)
+
+sce <- SingleCellExperiment(
+  assays = list(
+    counts = lc,
+    logcounts = log1p(lc)
+  ),
+  colData = cd
+)
+```
+
+Subsample to make this manageable for now:
+
+```{r}
+
+colnames(sce) <- paste0("cell_", seq_len(ncol(sce)))
+```
+
+```{r}
+assay(sce, 'seuratNormData') <- assay(sce, 'logcounts')
+sce <- singleCellTK::runSeuratScaleData(sce)
+
+sce <- singleCellTK::runSeuratPCA(sce)
+
+sce <- singleCellTK::runSeuratFindClusters(sce, resolution = 0.3)
+
+set.seed(123L)
+sce_subsample <- sce[, sample(ncol(sce), 1e5)]
+sce_subsample <- runUMAP(sce_subsample, dimred='seuratPCA')
+```
+
+```{r}
+plotUMAP(sce, colour_by = "Seurat_louvain_Resolution0.3")
+```
+
+```{r}
+
+plot_density(sce, features = rownames(sce))
+```
+```{r}
+plotExpression(sce, x= "Seurat_louvain_Resolution0.8", features = rownames(sce))
+```
+
+# Try to make a plot of the remainder channels
+
+```{r}
+cluster_mapping <- read_excel("../data/simon-cluster-interpretation.xlsx")
+cluster_mapping$cluster <- as.character(cluster_mapping$cluster)
+```
+
+```{r}
+dfsc <- colData(sce) |> 
+  as.data.frame() |> 
+  select(cluster = `Seurat_louvain_Resolution0.3`,
+         expression = Nd148Di,
+         target) |> 
+  as_tibble() |> 
+  inner_join(cluster_mapping)
+
+dfsc <- filter(dfsc, !is.na(target))
+```
+
+```{r}
+dfs <- group_by(dfsc, cluster, label, target) |> 
+  summarize(mean_expression = mean(log1p(expression)),
+            sd_expression = sd(log1p(expression))) |> 
+  ungroup()
+```
+
+```{r}
+filter(dfs, mean_expression > 2) |> 
+ggplot(aes(y = target, x = label)) +
+  geom_point(aes(size = mean_expression, color = mean_expression)) +
+  scale_color_viridis_c() +
+  ggpubr::theme_pubclean() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+```{r}
+ggsave("../figs/cytomarker/mean_expression_by_cluster.png", width=6, height=12)
+```
+
+
+
+
+```{r}
+filter(dfs, sd_expression > 50) |> 
+ggplot(aes(y = target, x = label)) +
+  geom_point(aes(size = sd_expression, color = sd_expression)) +
+  scale_color_viridis_c() +
+  ggpubr::theme_pubclean() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+```{r}
+ggsave("../figs/cytomarker/sd_expression_by_cluster.png", width=6, height=12)
+```
+
+```{r}
+ggplot(dfs, aes(x = mean_expression, y = sd_expression)) +
+  geom_point()
+```
+
+
+```{r}
+dfs01 <- group_by(dfs, target) |> 
+  mutate(mean_expression_norm = (mean_expression - min(mean_expression)) / (max(mean_expression) - min(mean_expression)))
+```
+
+```{r}
+mat01 <- select(dfs01, label, target, mean_expression_norm) |> 
+  ungroup() |> 
+ tidyr::spread(target, mean_expression_norm, fill = 0) |> 
+  column_to_rownames('label') |> 
+  as.matrix()
+```
+
+```{r}
+hm <- Heatmap(mat01,
+        column_names_gp = gpar(fontsize = 4))
+draw(hm)
+```
+```{r}
+pdf("../figs/cytomarker/avg_expression.pdf", width=16, height=4)
+draw(hm)
+dev.off()
+```
+
+```{r}
+dfnorm <- group_by(dfsc, target, label) |> 
+  mutate(expression_log = log1p(expression)) |> 
+  mutate(expression_norm = (expression_log - min(expression_log)) / (max(expression_log) - min(expression_log)))
+
+
+dfnorm_sum <- dfnorm |> 
+  summarize(
+    expression_norm_mean = mean(expression_norm, na.rm=T),
+    expression_norm_sd = sd(expression_norm)
+  )
+
+```
+
+```{r}
+ggplot(dfnorm_sum, aes(x = expression_norm_mean, y = expression_norm_sd)) +
+  geom_point()
+```
+
