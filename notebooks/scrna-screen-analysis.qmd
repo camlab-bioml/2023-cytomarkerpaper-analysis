@@ -14,6 +14,9 @@ suppressPackageStartupMessages({
   library(singleCellTK)
   library(ggrepel)
   library(ggpubr)
+  library(zellkonverter)
+  library(stringr)
+  library(scran)
 })
 ```
 
@@ -48,6 +51,20 @@ scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resoluti
 sce_full <- readRDS(here("data/sce_screen_full.rds"))
 ```
 
+Read in cell type interpretation:
+
+```{r}
+cluster_interpretation <- read_excel(here("data/cluster-interpretation-nov23.xlsx"))
+```
+
+```{r}
+sce_full$cell_type <- plyr::mapvalues(sce_full$predicted_label,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+```
+
+
+
 ```{r}
 ## Cluster 2 is CD8s
 
@@ -55,6 +72,7 @@ dfsc <- colData(sce_full) |>
   as.data.frame() |> 
          select(expression = Nd148Di,
                 cluster = predicted_label,
+                cell_type,
          target) |> 
   as_tibble() 
 
@@ -63,14 +81,14 @@ dfsc <- filter(dfsc, !is.na(target))
 ```
 
 ```{r}
-dfsum <- group_by(dfsc, target, cluster) |> 
+dfsum <- group_by(dfsc, target, cell_type) |> 
   summarize(expr_mean = mean(log1p(expression)),
             expr_sd = sd(log1p(expression))) |> 
   ungroup()
 ```
 
 ```{r}
-dfcd8 <- filter(dfsum, cluster == "2")
+dfcd8 <- filter(dfsum, cell_type == "T-CD8")
 ggplot(dfcd8, aes(x = expr_mean, y = expr_sd)) +
   geom_point() +
   geom_label_repel(aes(label = target), data = filter(dfcd8, expr_sd > 1)) +
@@ -96,6 +114,492 @@ ggplot(dfcd20, aes(x = expr_mean, y = expr_sd)) +
 
 
 # Contrast this to scRNA-seq PBMC data
+
+First map the screen to gene names
+
+```{r}
+mapping <- read_excel(here("data/aliasmatch_kieranreview-annots.xlsx"))
+```
+
+Need to clear this up:
+
+```{r}
+mapping <- mutate(mapping, gene_symbol = case_when(
+  !is.na(Corrected) ~ Corrected,
+  Alias != "NA" ~ Alias,
+  input_in_sce ~ Input
+))
+```
+
+
+
+```{r}
+sce <- readH5AD(here("data/tabula_sapiens_blood_10ksubsample.h5ad"))
+assay(sce, 'logcounts') <- assay(sce, 'X')
+assay(sce, 'X') <- NULL
+```
+
+```{r}
+table(sce$cell_ontology_class)
+```
+## Pull off a specific cell type
+
+```{r}
+sce_ct <- sce[, grepl("cd4", sce$cell_ontology_class)]
+```
+
+What genes do we have in the RNA matched?
+
+```{r}
+mm <- match(str_to_upper(mapping$gene_symbol), str_to_upper(rowData(sce_ct)$feature_name))
+```
+
+```{r}
+mapping$gene_idx <- mm
+mapping <- filter(mapping, !is.na(gene_idx))
+sce_ct_s <- sce_ct[mapping$gene_idx,]
+
+stopifnot(all(str_to_upper(mapping$gene_symbol) == str_to_upper(rowData(sce_ct_s)$feature_name)))
+```
+
+```{r}
+dec <- modelGeneVar(logcounts(sce_ct_s))
+dec <- as.data.frame(dec) |> 
+  mutate(gene_symbol = rowData(sce_ct_s)$feature_name)
+```
+
+```{r}
+ggplot(dec, aes(x = mean, y = total)) +
+  geom_point() +
+  geom_label_repel(aes(label = gene_symbol), data = filter(dec, total > 2)) +
+  geom_label_repel(aes(label = gene_symbol), data = filter(dec, mean > 2))
+```
+## CD4 T cell scRNA compare
+
+```{r}
+df_ct <- filter(dfsum, cell_type == "T-CD4")
+# dfcd8 <- filter(dfsum, cluster == "2")
+df_ct$gene_symbol <- plyr::mapvalues(
+  from = str_to_upper(mapping$Input), 
+  to = str_to_upper(mapping$gene_symbol),
+  str_to_upper(df_ct$target)
+)
+
+ggplot(df_ct, aes(x = expr_mean, y = expr_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd > 1)) +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression",
+       subtitle = "Marker variance within CD8 T cells")
+```
+
+```{r}
+top_var_screen <- top_n(df_ct, 20, expr_sd) |> 
+  pull("gene_symbol") |> 
+  unique()
+
+bottom_var_screen <- filter(df_ct, expr_mean > median(expr_mean)) |> 
+  top_n(20, -expr_sd) |> 
+  pull("gene_symbol") |> 
+  unique()
+# top_var_screen <- filter(df_ct, expr_sd >1) |> pull('gene_symbol')
+# bottom_var_screen <- filter(df_ct, expr_sd < 0.5, expr_mean > 4) |> pull('gene_symbol')
+```
+
+```{r}
+sce_ct <- sce[, grepl("cd4", sce$cell_ontology_class)]
+```
+
+
+```{r}
+sce_ct <- sce_ct[!duplicated(rowData(sce_ct)$feature_name),]
+rownames(sce_ct) <- rowData(sce_ct)$feature_name
+```
+
+```{r}
+sce_ct <- runUMAP(sce_ct)
+plot_density(sce_ct, features = c("CD3D", "CD4"))
+```
+```{r}
+sce_ct <- singleCellTK::runSeuratScaleData(sce_ct, useAssay = 'logcounts')
+sce_ct <- singleCellTK::runSeuratPCA(sce_ct)
+sce_ct <- singleCellTK::runSeuratFindClusters(sce_ct)
+```
+```{r}
+plotUMAP(sce_ct, colour_by = "Seurat_louvain_Resolution0.8")
+```
+
+```{r}
+sce_expr <- sce_ct[rowSums(logcounts(sce_ct)) > 1, ]
+fm <- findMarkers(sce_expr, sce_expr$Seurat_louvain_Resolution0.8)
+```
+
+
+We want ranks for 3 different scenarios:
+
+1. Top markers from the screen (highest variance)
+2. Random set of markers from the screen (to account for bias in how they were icked)
+3. Random set of markers
+
+For (1):
+```{r}
+mrkr_rank <- sapply(fm, function(f) match(top_var_screen, rownames(f)))
+mr <- data.frame(mrkr_rank, row.names = top_var_screen)
+mr <- drop_na(mr)
+```
+
+For (2):
+
+```{r}
+random_genes <- sample(rownames(sce_expr), length(top_var_screen))
+rank_random <- sapply(fm, function(f) match(random_genes, rownames(f)))
+mr_random <- data.frame(rank_random, row.names = random_genes)
+mr_random <- drop_na(mr_random)
+```
+
+For (3):
+
+```{r}
+random_screen_genes <- sample(unique(df_ct$gene_symbol), length(top_var_screen))
+rank_random_screen <- sapply(fm, function(f) match(random_screen_genes, rownames(f)))
+mr_random_screen <- data.frame(rank_random_screen, row.names = random_screen_genes)
+mr_random_screen <- drop_na(mr_random_screen)
+```
+
+```{r}
+dfall <- bind_rows(
+  mutate(mr, what = 'Gene shows high\nsubcluster variability\nin CyTOF screen'),
+  mutate(mr_random_screen, what = 'Random\ngene set\n(screen)'),
+  mutate(mr_random, what = 'Random\ngene set\n(all scRNA)')
+) |> 
+  as_tibble()
+```
+
+
+```{r}
+dfall <- gather(dfall, cluster, rank, -what) 
+
+dfall |> 
+  ggplot(aes(x = cluster, fill = what, y = rank)) +
+  geom_violin() 
+```
+```{r}
+cols <- c('Gene shows high\nsubcluster variability\nin CyTOF screen'='darkred',
+          'Random\ngene set\n(screen)' = '#AEC6CF',
+          'Random\ngene set\n(all scRNA)' = 'grey80')
+
+dfall2 <- dfall %>%
+  mutate(what = factor(what, levels = names(cols))) %>%
+  group_by(cluster) |> 
+  arrange(what, rank) %>%
+  mutate(ordered_rank = row_number()) 
+
+group_by(dfall2, cluster, what) |> 
+  # mutate(x = rank(rank)) |> 
+  mutate(cluster = gsub("X", "CD4 T sub-cluster ", cluster)) |> 
+  ggplot(aes(x = ordered_rank, y = rank)) +
+  geom_point(aes(color = what)) +
+  facet_wrap(~ cluster) +
+  scale_y_log10() +
+  cowplot::theme_cowplot() +
+  # theme_pubclean() +
+  labs(x = "Gene",
+       y = "Gene rank as cluster marker in scRNA-seq") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = 'white'),
+        legend.title = element_blank()) +
+  scale_color_manual(values = cols) +
+  theme(legend.position = 'bottom')
+```
+
+
+
+```{r}
+ggsave(here("figs/cd4-screen-vs-scrna.pdf"), width=6, height=5)
+```
+
+
+## CD4 8 cell scRNA compare
+
+```{r}
+df_ct <- filter(dfsum, cluster %in% c("2"))
+# dfcd8 <- filter(dfsum, cluster == "2")
+df_ct$gene_symbol <- plyr::mapvalues(
+  from = str_to_upper(mapping$Input), 
+  to = str_to_upper(mapping$gene_symbol),
+  str_to_upper(df_ct$target)
+)
+
+ggplot(df_ct, aes(x = expr_mean, y = expr_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd > 1)) +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression",
+       subtitle = "Marker variance within CD8 T cells")
+```
+
+
+```{r}
+# there's another CD8 cell type in here but it doesn't seem to express CD3 or CD8??!
+sce_ct <- sce[, sce$cell_ontology_class == "cd8-positive, alpha-beta t cell"]
+```
+
+
+```{r}
+sce_ct <- sce_ct[!duplicated(rowData(sce_ct)$feature_name),]
+rownames(sce_ct) <- rowData(sce_ct)$feature_name
+```
+
+```{r}
+sce_ct <- runUMAP(sce_ct)
+plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A"))
+```
+```{r}
+sce_ct <- singleCellTK::runSeuratScaleData(sce_ct, useAssay = 'logcounts')
+sce_ct <- singleCellTK::runSeuratPCA(sce_ct)
+sce_ct <- singleCellTK::runSeuratFindClusters(sce_ct)
+```
+```{r}
+plotUMAP(sce_ct, colour_by = "Seurat_louvain_Resolution0.8")
+```
+
+```{r}
+sce_expr <- sce_ct[rowSums(logcounts(sce_ct)) > 1, ]
+fm <- findMarkers(sce_expr, sce_expr$Seurat_louvain_Resolution0.8)
+```
+
+Top markers as pulled out of the screen:
+
+```{r}
+top_var_screen <- filter(df_ct, expr_sd > 0.8) |> pull('gene_symbol')
+top_var_screen <- unique(top_var_screen)
+```
+
+```{r}
+# top_var_screen <- sample(rownames(sce_expr), length(top_var_screen))
+```
+
+
+```{r}
+mrkr_rank <- sapply(fm, function(f) match(top_var_screen, rownames(f)))
+```
+
+```{r}
+mr <- data.frame(mrkr_rank, row.names = top_var_screen)
+mr <- drop_na(mr)
+```
+
+```{r}
+library(ComplexHeatmap)
+Heatmap(mr)
+```
+
+
+
+```{r}
+null_genes <- sample(rownames(sce_expr), length(top_var_screen))
+```
+
+
+```{r}
+rank_null <- sapply(fm, function(f) match(null_genes, rownames(f)))
+```
+
+```{r}
+mr_null <- data.frame(rank_null, row.names = null_genes)
+mr_null <- drop_na(mr_null)
+```
+
+```{r}
+dfall <- bind_rows(
+  mutate(mr, what = 'Gene shows high\nsubcluster variability\nin CyTOF screen'),
+  mutate(mr_null, what = 'Random gene set')
+) |> 
+  as_tibble()
+```
+
+
+```{r}
+dfall <- gather(dfall, cluster, rank, -what) 
+
+dfall |> 
+  ggplot(aes(x = cluster, fill = what, y = rank)) +
+  geom_violin() 
+```
+```{r}
+cols <- c('Gene shows high\nsubcluster variability\nin CyTOF screen'='darkred',
+          'Random gene set' = 'grey80')
+
+group_by(dfall, cluster) |> 
+  mutate(x = rank(rank)) |> 
+  mutate(cluster = gsub("X", "CD8 T sub-cluster ", cluster)) |> 
+  ggplot(aes(x = x, y = rank)) +
+  geom_point(aes(color = what)) +
+  facet_wrap(~ cluster) +
+  scale_y_log10() +
+  theme_pubclean() +
+  labs(x = "Gene",
+       y = "Gene rank as cluster marker in scRNA-seq") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = 'white'),
+        legend.title = element_blank()) +
+  scale_color_manual(values = cols)
+```
+```{r}
+ggsave(here("figs/cd8-screen-vs-scrna.pdf"), width=6, height=3.5)
+```
+
+
+
+## CD4 B cell scRNA compare
+
+```{r}
+df_ct <- filter(dfsum, cluster %in% c("7"))
+# dfcd8 <- filter(dfsum, cluster == "2")
+df_ct$gene_symbol <- plyr::mapvalues(
+  from = str_to_upper(mapping$Input), 
+  to = str_to_upper(mapping$gene_symbol),
+  str_to_upper(df_ct$target)
+)
+
+ggplot(df_ct, aes(x = expr_mean, y = expr_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd > 1)) +
+  geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression",
+       subtitle = "Marker variance withinB cells")
+```
+
+
+```{r}
+# there's another CD8 cell type in here but it doesn't seem to express CD3 or CD8??!
+sce_ct <- sce[, grepl("b cell", sce$cell_ontology_class)]
+```
+
+
+```{r}
+sce_ct <- sce_ct[!duplicated(rowData(sce_ct)$feature_name),]
+rownames(sce_ct) <- rowData(sce_ct)$feature_name
+```
+
+```{r}
+sce_ct <- runUMAP(sce_ct)
+plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1"))
+```
+```{r}
+sce_ct <- singleCellTK::runSeuratScaleData(sce_ct, useAssay = 'logcounts')
+sce_ct <- singleCellTK::runSeuratPCA(sce_ct)
+sce_ct <- singleCellTK::runSeuratFindClusters(sce_ct)
+```
+```{r}
+plotUMAP(sce_ct, colour_by = "Seurat_louvain_Resolution0.8")
+```
+
+```{r}
+sce_expr <- sce_ct[rowSums(logcounts(sce_ct)) > 1, ]
+fm <- findMarkers(sce_expr, sce_expr$Seurat_louvain_Resolution0.8)
+```
+
+Top markers as pulled out of the screen:
+
+```{r}
+top_var_screen <- filter(df_ct, expr_sd > 0.8) |> pull('gene_symbol')
+top_var_screen <- unique(top_var_screen)
+```
+
+```{r}
+# top_var_screen <- sample(rownames(sce_expr), length(top_var_screen))
+```
+
+
+```{r}
+mrkr_rank <- sapply(fm, function(f) match(top_var_screen, rownames(f)))
+```
+
+```{r}
+mr <- data.frame(mrkr_rank, row.names = top_var_screen)
+mr <- drop_na(mr)
+```
+
+```{r}
+library(ComplexHeatmap)
+Heatmap(mr)
+```
+
+
+
+```{r}
+null_genes <- sample(rownames(sce_expr), length(top_var_screen))
+
+null_genes <- filter(df_ct, expr_sd < 0.8) |> pull('gene_symbol')
+null_genes <- unique(null_genes)
+```
+
+
+```{r}
+rank_null <- sapply(fm, function(f) match(null_genes, rownames(f)))
+```
+
+```{r}
+mr_null <- data.frame(rank_null, row.names = null_genes)
+mr_null <- drop_na(mr_null)
+```
+
+```{r}
+dfall <- bind_rows(
+  mutate(mr, what = 'Gene shows high\nsubcluster variability\nin CyTOF screen'),
+  mutate(mr_null, what = 'Random gene set')
+) |> 
+  as_tibble()
+```
+
+
+```{r}
+dfall <- gather(dfall, cluster, rank, -what) 
+
+dfall |> 
+  ggplot(aes(x = cluster, fill = what, y = rank)) +
+  geom_violin() 
+```
+```{r}
+cols <- c('Gene shows high\nsubcluster variability\nin CyTOF screen'='darkred',
+          'Random gene set' = 'grey80')
+
+group_by(dfall, cluster) |> 
+  mutate(x = rank(rank)) |> 
+  mutate(cluster = gsub("X", "CD8 T sub-cluster ", cluster)) |> 
+  ggplot(aes(x = x, y = rank)) +
+  geom_point(aes(color = what)) +
+  facet_wrap(~ cluster) +
+  scale_y_log10() +
+  theme_pubclean() +
+  labs(x = "Gene",
+       y = "Gene rank as cluster marker in scRNA-seq") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = 'white'),
+        legend.title = element_blank()) +
+  scale_color_manual(values = cols)
+```
+```{r}
+ggsave(here("figs/cd8-screen-vs-scrna.pdf"), width=6, height=3.5)
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 
