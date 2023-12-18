@@ -1,0 +1,69 @@
+---
+title: "Interpret screen clusters"
+format: html
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(SingleCellExperiment)
+  library(readxl)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+  library(here)
+  library(singleCellTK)
+  library(ggrepel)
+  library(ggpubr)
+  library(zellkonverter)
+  library(stringr)
+  library(scran)
+  library(here)
+})
+```
+
+```{r}
+sce <- readRDS(here("data/sce_screen_subsample.rds"))
+```
+
+```{r}
+reducedDim(sce,'UMAP') <- reducedDim(sce, 'seuratUMAP')
+```
+
+
+
+```{r}
+plotUMAP(sce, colorBy = "Seurat_louvain_Resolution0.5")
+```
+
+```{r}
+
+plot_density(sce, features = rownames(sce))
+```
+
+
+```{r}
+scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resolution0.5", center=TRUE, scale=TRUE)
+```
+```{r}
+ggsave("../figs/screen_cluster_heatmap_scaled.png", width=6, height=5)
+```
+
+
+```{r}
+scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resolution0.5", zlim = c(2, 5))
+```
+```{r}
+ggsave("../figs/screen_cluster_heatmap_unscaled.png", width=6, height=5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
