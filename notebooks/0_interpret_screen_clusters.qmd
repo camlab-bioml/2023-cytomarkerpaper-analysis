@@ -56,6 +56,94 @@ scater::plotDots(sce, features = rownames(sce), group = "Seurat_louvain_Resoluti
 ggsave("../figs/screen_cluster_heatmap_unscaled.png", width=6, height=5)
 ```
 
+# Overall UMAP plot
+
+```{r}
+cluster_interpretation <- read_excel(here("data/cluster-interpretation-nov23.xlsx"))
+
+```
+
+```{r}
+sce$cell_type <- plyr::mapvalues(sce$Seurat_louvain_Resolution0.5,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+```
+
+```{r}
+plt <- scater::plotUMAP(sce, colour_by = "cell_type", text_by = "cell_type")
+print(plt)
+```
+
+```{r}
+dfu <- tibble(cell_type = sce$cell_type) |> 
+  mutate(`UMAP 1` = reducedDim(sce, 'UMAP')[,1],
+        `UMAP 2` = reducedDim(sce, 'UMAP')[,2])
+```
+
+```{r}
+ggplot(dfu, aes(x = `UMAP 1`, y = `UMAP 2`, color = cell_type)) +
+  geom_point(alpha = 0.5, size=1) +
+  # scale_colour_viridis_c(name = "Scaled expression") +
+  scale_colour_brewer(palette = "Paired") +
+  ggpubr::theme_pubr() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank()) +
+  theme(legend.position = c(0.1, 0.8),
+        legend.title = element_blank()) + 
+  guides(colour = guide_legend(override.aes = list(size=2)))
+```
+
+```{r}
+ggsave(here("figs/UMAP_celltype.png"), width=5, height=4.7)
+```
+
+
+
+```{r}
+lc <- scale(t(logcounts(sce)))
+lc[lc > 2] <- 2
+lc[lc < -2] <- -2
+
+
+lc <- as_tibble(lc) |> 
+  mutate(`UMAP 1` = reducedDim(sce, 'UMAP')[,1],
+        `UMAP 2` = reducedDim(sce, 'UMAP')[,2])
+
+df <- gather(lc, protein, expression, -`UMAP 1`, -`UMAP 2`)
+
+# df <- sample_n(df, size = 1e4)
+```
+
+```{r}
+df <- group_by(df, protein) |> 
+  arrange(desc(expression)) |> 
+  ungroup()
+```
+
+
+```{r}
+ggplot(df, aes(x = `UMAP 1`, y = `UMAP 2`, colour = expression)) +
+  geom_point(alpha = 0.5, size=.1) +
+  facet_wrap(~ protein) +
+  scale_colour_viridis_c(name = "Scaled expression") +
+  ggpubr::theme_pubr() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        strip.background = element_rect(fill = 'white', color = 'white'),
+        strip.text = element_text(face = 'bold'),
+        axis.line = element_blank()) +
+  theme(legend.position = 'bottom',
+        legend.title = element_text(size = 10))
+```
+
+```{r}
+ggsave(here("figs/UMAP_expression.png"), width=8, height=6)
+```
+
+
 
 
 

@@ -354,6 +354,11 @@ dfall |>
 ggsave(here(glue("figs/screen-vs-scrna.pdf")), width=6, height=4.5)
 ```
 
+## Save processed expression objects
+
+```{r}
+saveRDS(sce_ct, "../data/processed/sce_scrna.rds")
+```
 
 
 
