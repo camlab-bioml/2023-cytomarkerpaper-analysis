@@ -5,7 +5,13 @@ cell_types = cell_types['cell_type']
 
 
 outputs = {
-    'rank-figs': expand('figs/{cell_type}-screen-vs-scrna.pdf', cell_type = cell_types)
+    'rank-figs': 'figs/screen-vs-scrna.pdf',
+    'fig-heatmap-scaled': 'figs/screen_cluster_heatmap_scaled.png',
+    'fig-heatmap-unscaled': 'figs/screen_cluster_heatmap_unscaled.png',
+    'fig-umap-celltype': 'figs/UMAP_celltype.png',
+    'fig-umap-expression': 'figs/UMAP_expression.png',
+    'fig-correlation': "figs/rna-protein-scatter.pdf",
+    'fig-sens-spec': 'figs/cytomarker_sens_spec.pdf'
 }
 
 
@@ -23,11 +29,38 @@ rule parse_screen:
     script:
         'scripts/parse-screen-to-sce.R'
 
+rule interpret_clusters:
+    input:
+        'data/sce_screen_subsample.rds',
+        'data/cluster-interpretation-nov23.xlsx',
+    output:
+        outputs['fig-heatmap-scaled'],
+        outputs['fig-heatmap-unscaled'],
+        outputs['fig-umap-celltype'],
+        outputs['fig-umap-expression'],
+    shell:
+        'quarto render notebooks/interpret-screen-clusters.qmd'
+    
+    
+
 rule make_rank_figs:
     input:
         'data/sce_screen_full.rds',
         "data/sce_screen_subsample.rds",
     output:
-        'figs/{cell_type}-screen-vs-scrna.pdf',
+        outputs['rank-figs'],
+        "data/processed/sce_scrna.rds"
     shell:
-        'quarto render notebooks/compare-screen-scrna-marker-rank.qmd -P cell_type:{wildcards.cell_type}'
+        'quarto render notebooks/compare-screen-scrna-marker-rank.qmd'
+
+rule rna_protein_correlation:
+    input:
+        'data/processed/sce_scrna.rds',
+        'data/cluster-interpretation-nov23.xlsx',
+        'data/aliasmatch_kieranreview-annots.xlsx',
+        'data/screen-scrna-celltype-match.xlsx'
+    output:
+        outputs['fig-correlation'],
+        outputs['fig-sens-spec'],
+    shell:
+        'quarto render notebooks/rna-protein-correlation.qmd'

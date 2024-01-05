@@ -344,9 +344,7 @@ dfall |>
               y_position = c(30000, 35000)) +
   ylim(0, 4e4)
 ```
-```{r}
 
-```
 
 
 
@@ -357,7 +355,7 @@ ggsave(here(glue("figs/screen-vs-scrna.pdf")), width=6, height=4.5)
 ## Save processed expression objects
 
 ```{r}
-saveRDS(sce_ct, "../data/processed/sce_scrna.rds")
+saveRDS(sce_ct, here("data/processed/sce_scrna.rds"))
 ```
 
 
