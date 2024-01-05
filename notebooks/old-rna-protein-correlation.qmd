@@ -1,0 +1,360 @@
+---
+title: "RNA protein correlation analysis"
+format: html
+---
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(SingleCellExperiment)
+  library(readxl)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+  library(here)
+  library(singleCellTK)
+  library(ggrepel)
+  library(ggpubr)
+  library(zellkonverter)
+  library(stringr)
+  library(glue)
+  library(scran)
+  library(scater)
+})
+```
+
+Read in needed data:
+
+```{r}
+cluster_interpretation <- read_excel(here("data/cluster-interpretation-nov23.xlsx"))
+sce_rna <- readRDS(here("data/processed/sce_scrna.rds"))
+
+sce_cytof <- readRDS(here("data/sce_screen_full.rds"))
+
+sce_full$cell_type <- plyr::mapvalues(sce_full$predicted_label,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+
+feature_mapping <- read_excel(here("data/aliasmatch_kieranreview-annots.xlsx"))
+
+```
+
+
+
+## Map genes between ab and sce
+
+```{r}
+feature_mapping <- mutate(feature_mapping, gene_symbol = case_when(
+  !is.na(Corrected) ~ Corrected,
+  Alias != "NA" ~ Alias,
+  input_in_sce ~ Input
+))
+
+```
+
+
+```{r}
+
+dfsc <- colData(sce_cytof) |> 
+  as.data.frame() |> 
+         select(expression = Nd148Di,
+                cluster = predicted_label,
+         target) |> 
+  as_tibble() 
+
+dfsc <- filter(dfsc, !is.na(target))
+
+dfsum <- group_by(dfsc, target) |> 
+  summarize(expr_mean = mean(log1p(expression)),
+            expr_sd = sd(log1p(expression))) |> 
+  ungroup()
+```
+
+
+
+
+```{r}
+feature_mapping <- filter(feature_mapping, !is.na(gene_symbol))
+genealias_short <- dplyr::select(feature_mapping, Input, gene_symbol) |> 
+  dplyr::rename(target = Input) 
+
+df_cytof <- inner_join(genealias_short, dfsum, by = "target")
+
+```
+
+Now make sure we're only looking at genes we have in common between scrna and cytof:
+
+```{r}
+common_genes <- intersect(rownames(sce_rna), df_cytof$gene_symbol)
+```
+
+```{r}
+df_cytof <- filter(df_cytof, gene_symbol %in% common_genes)
+sce_rna <- sce_rna[common_genes,]
+```
+
+
+
+```{r}
+matched_genes <- rownames(sce)[rownames(sce) %in% df$gene_symbol]
+
+```
+
+
+```{r}
+table(unique(df$gene_symbol) %in% rownames(sce))
+```
+
+Start by getting super granular clusters:
+
+```{r}
+granular_clusters <- seurat_cluster(sce, resolution = 1.5, return_SCE = FALSE)
+```
+```{r}
+sce$granular_clusters <- granular_clusters
+plotUMAP(sce, colour_by = "granular_clusters")
+```
+Let's map the two clusterings to each other
+
+```{r}
+cluster_mapping_cytof <- tribble(
+  ~cluster_cytof, ~cluster_major,
+  "CD4_T-Cells", "CD4 T",
+  "CD8_T-Cells", "CD8 T",
+  "Myeloid_1", "Myeloid",
+  "Myeloid_2", "Myeloid"
+)
+
+cluster_mapping_scrna <- tribble(
+  ~cluster_scrna, ~cluster_major,
+  "CD14+ Mono", "Myeloid",
+  "FCGR3A+ Mono", "Myeloid",
+  "Memory CD4 T", "CD4 T",
+  "Naive CD4 T", "CD4 T",
+  "CD8 T", "CD8 T",
+)
+```
+
+## Start by comparing mean expressions
+
+```{r}
+dfscrna <- t(as.matrix(logcounts(sce[matched_genes,]))) |> 
+  as.data.frame() |> 
+  mutate(cluster_scrna = sce$seurat_annotations) |> 
+  inner_join(cluster_mapping_scrna) |>
+  gather(gene_symbol, expression_scrna, -cluster_scrna, -cluster_major) |> 
+  as_tibble()
+
+dfscrna <- group_by(dfscrna, cluster_major, gene_symbol) |> 
+  summarize(mean_expr_scrna = mean(expression_scrna),
+            var_expr_scrna = var(expression_scrna))
+```
+
+```{r}
+df_cytof <- inner_join(df, cluster_mapping_cytof) |> 
+  group_by(cluster_major, gene_symbol) |> 
+  summarize(mean_expr_cytof = mean(mean_expr_cytof),
+            var_expr_cytof = mean(variance_expr_cytof)) # this is mean because we're just summarizing over cell types
+```
+
+```{r}
+df_both <- inner_join(dfscrna, df_cytof, by = c("cluster_major", "gene_symbol")) 
+
+df_both |> 
+  ggplot(aes(x = mean_expr_scrna, y = mean_expr_cytof)) +
+  geom_point() +
+  facet_wrap(~ cluster_major)+
+  scale_x_log10() +
+  scale_y_log10() +
+    ggpubr::theme_pubclean() +   
+  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA") +
+  theme(strip.background = element_rect(fill = "grey95")) +
+  geom_smooth(method="lm")
+```
+
+
+
+What are the correlation values?
+
+```{r}
+inner_join(dfscrna, df_cytof, by = c("cluster_major", "gene_symbol")) |> 
+  group_by(cluster_major) |> 
+  summarize(correlation = cor(log1p(mean_expr_scrna), log1p(mean_expr_cytof), method="pearson"))
+```
+
+## Overlay with MS data
+
+```{r}
+## it's all NA after line 6070
+df_nic <- read_excel("../data/nicolet-data/journal.pone.0276294.s006.xlsx", sheet = "RNA-protein distribution", n_max=6070)
+```
+
+```{r}
+df_nic <- select(df_nic, ID, contains("rank")) |> 
+  rename(gene_symbol = ID) |> 
+  gather(cell_type_modality, rank, -gene_symbol)
+```
+
+```{r}
+df_nic <- separate(df_nic, cell_type_modality, c("ignore", "modality", "cell_type"), sep="_")
+df_nic <- select(df_nic, -ignore)
+
+# I don't know why there are duplicates here but let's run with it
+df_nic <- group_by(df_nic, gene_symbol, modality, cell_type) |> 
+  summarize(rank = median(rank)) |> 
+  ungroup()
+
+df_nic <- spread(df_nic, modality, rank)
+
+df_nic <- group_by(df_nic, cell_type) |> 
+  mutate(protein = rank(protein), RNA = rank(RNA)) # renormalize ranks
+```
+
+```{r}
+df_nic <- group_by(df_nic, cell_type) |> 
+  mutate(agree = 1 * ( (RNA > median(RNA) & protein > median(protein)) | (RNA < median(RNA) & protein < median(protein))))
+```
+
+
+```{r}
+ggplot(df_nic, aes(x = protein, y = RNA)) +
+  geom_point(aes(color = agree), alpha = 0.1) +
+  facet_wrap(~ cell_type)
+```
+```{r}
+df_nic_sum <- group_by(df_nic, gene_symbol) |> 
+  mutate(agree_prop = mean(agree))
+```
+
+
+```{r}
+df_both2 <- inner_join(df_both, df_nic_sum) 
+
+plt1 <- df_both2 |> 
+  ggplot(aes(x = mean_expr_scrna, y = mean_expr_cytof)) +
+  geom_point() +
+  facet_wrap(~ cluster_major)+
+  scale_x_log10() +
+  scale_y_log10() +
+    ggpubr::theme_pubclean() +   
+  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA", subtitle  = "Using all markers in screen") +
+  theme(strip.background = element_rect(fill = "grey95")) +
+  geom_smooth(method="lm")
+
+plt2 <- filter(df_both2, agree_prop == 1) |> 
+  ggplot(aes(x = mean_expr_scrna, y = mean_expr_cytof)) +
+  geom_point() +
+  facet_wrap(~ cluster_major)+
+  scale_x_log10() +
+  scale_y_log10() +
+    ggpubr::theme_pubclean() +   
+  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA", subtitle = "Removing markers with low MS-RNA agreement") +
+  theme(strip.background = element_rect(fill = "grey95")) +
+  geom_smooth(method="lm")
+```
+
+```{r}
+cowplot::plot_grid(plt1, plt2, ncol=1)
+```
+
+
+```{r}
+ggsave("../figs/cytomarker/mean_expression_comparison.pdf", width=8, height=5)
+```
+
+
+```{r}
+df_both2 |> 
+  group_by(cluster_major) |> 
+  summarize(correlation = cor(log1p(mean_expr_scrna), log1p(mean_expr_cytof), method="pearson"))
+```
+
+```{r}
+df_both2 |> 
+  filter(agree_prop  == 1) |> 
+  group_by(cluster_major) |> 
+  summarize(correlation = cor(log1p(mean_expr_scrna), log1p(mean_expr_cytof), method="pearson"))
+```
+
+
+## Turn this into a prediction problem setup
+
+```{r}
+thresh <- 0.5
+
+dfscrna_bin <- ungroup(dfscrna) |> 
+  group_by(cluster_major) |> 
+  mutate(is_high_scrna = 1 * (mean_expr_scrna > quantile(mean_expr_scrna, thresh))) |> 
+  ungroup() |> 
+  select(cluster_major, gene_symbol, is_high_scrna)
+
+df_cytof_bin <- ungroup(df_cytof) |> 
+  group_by(cluster_major) |> 
+  mutate(is_high_cytof = 1 * (mean_expr_cytof > quantile(mean_expr_cytof, thresh))) |> 
+  ungroup()|> 
+  select(cluster_major, gene_symbol, is_high_cytof)
+
+df_bin <- inner_join(dfscrna_bin, df_cytof_bin)
+```
+
+Integrate this with whether they agree:
+
+```{r}
+agreeprops <- ungroup(df_both2) |> 
+  select(gene_symbol, agree_prop) |> 
+  distinct()
+
+df_bin <- inner_join(df_bin, agreeprops)
+```
+
+
+```{r}
+library(caret)
+
+get_sens_spec <- function(clusterm, filter_agreeprop = TRUE) {
+  df_bin_tmp <- filter(df_bin, cluster_major == clusterm)
+  if(filter_agreeprop) {
+    df_bin_tmp <- filter(df_bin_tmp, agree_prop == 1)
+  }
+  conf_matrix <- confusionMatrix(data = factor(df_bin_tmp$is_high_scrna, levels=c(1,0)), reference=factor(df_bin_tmp$is_high_cytof, levels=c(1,0)))
+  tibble(
+    cluster_major = clusterm,
+    value = c(conf_matrix$byClass['Sensitivity'], conf_matrix$byClass['Specificity'], conf_matrix$byClass['Pos Pred Value']),
+    Metric = c("Sensitivity", "Specificity", "Pos. Pred. Value"),
+    filter_agreeprop = filter_agreeprop
+  )
+}
+
+df_senspec <- bind_rows(
+  lapply(unique(dfscrna_bin$cluster_major), get_sens_spec, filter_agreeprop = TRUE) |> 
+    bind_rows(),
+  lapply(unique(dfscrna_bin$cluster_major), get_sens_spec, filter_agreeprop = FALSE) |> 
+    bind_rows()
+)
+  
+```
+
+```{r}
+
+df_senspec |> 
+  filter(Metric == "Pos. Pred. Value") |> 
+  mutate(filter_agreeprop_str = case_when(
+    filter_agreeprop ~ "Removing markers with low\nMS-RNA agreement",
+    !filter_agreeprop ~ "Using all markers in screen"
+  )) |> 
+ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster_major)) +
+  geom_bar(stat='identity', position = 'dodge') +
+  ggpubr::theme_pubclean() +
+  labs(x = "Cell type", y = "Positive predictive vlaue",
+       subtitle = "Ability to predict protein expression from scRNA-seq") +
+  scale_fill_brewer(palette = "Accent") +
+  ylim(0, 1.1) +
+  scale_y_continuous(breaks = seq(0, 1.0, by = 0.1)) +
+  theme(legend.title=element_blank(),
+        legend.position = "right") +
+  guides(fill=guide_legend(ncol =1))
+```
+```{r}
+ggsave("../figs/cytomarker/cytomarker_sens_spec.pdf", width=8, height=3, scale = 0.75)
+```
+
