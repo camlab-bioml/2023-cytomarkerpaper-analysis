@@ -11,7 +11,8 @@ outputs = {
     'fig-umap-celltype': 'figs/UMAP_celltype.png',
     'fig-umap-expression': 'figs/UMAP_expression.png',
     'fig-correlation': "figs/rna-protein-scatter.pdf",
-    'fig-sens-spec': 'figs/cytomarker_sens_spec.pdf'
+    'fig-sens-spec': 'figs/cytomarker_sens_spec.pdf',
+    'fig-mammary-heatmap-single-cell': 'figs/heatmap_mammary_single_cell.pdf'
 }
 
 
@@ -64,3 +65,11 @@ rule rna_protein_correlation:
         outputs['fig-sens-spec'],
     shell:
         'quarto render notebooks/rna-protein-correlation.qmd'
+
+rule mammary_single_cell_heatmap:
+    input:
+        'data/mammary_expression_heatmap_subset_4_with_abbrev.csv'
+    output:
+        outputs['fig-mammary-heatmap-single-cell']
+    shell:
+        'quarto render notebooks/mammary-single-cell-heatmap.qmd'

@@ -5,3 +5,5 @@
 *.html
 *_files/
 .DS_Store
+
+.snakemake/
