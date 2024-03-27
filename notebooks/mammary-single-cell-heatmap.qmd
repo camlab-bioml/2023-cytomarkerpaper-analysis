@@ -31,11 +31,12 @@ print(here())
 ```
 
 ```{r}
-mat_cor <- read.csv(here("data/mammary_expression_heatmap_subset_4_with_abbrev.csv"))
+mat_cor <- read.csv(here("data/mammary_expression_heatmap.csv"))
 row.names(mat_cor) <- mat_cor$X
-
 mat_cor <- mat_cor |> select(-c(X))
+# mat_cor[mat_cor < 0] <- 0
 mat_cor_norm <- scale(mat_cor, center=FALSE, scale=colMax(mat_cor))
+# mat_cor_norm[is.na(mat_cor_norm)] <- 0
 
 heatmap_mammary <- Heatmap(mat_cor_norm, name = "Normalized\nexpression", column_title = "Marker",
         column_title_side = "bottom",
@@ -46,7 +47,7 @@ heatmap_mammary <- Heatmap(mat_cor_norm, name = "Normalized\nexpression", column
 
 ```{r}
 # ggsave(here(glue("heatmap_mammary.pdf")), width=6, height=4.5)
-pdf('heatmap_mammary_single_cell.pdf', height = 4.5)
+pdf('../figures/heatmap_mammary_single_cell.pdf', height = 4.5)
 draw(heatmap_mammary)
 dev.off()
 ```
