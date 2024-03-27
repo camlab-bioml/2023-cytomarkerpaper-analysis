@@ -316,8 +316,8 @@ df_senspec <- bind_rows(
 df_senspec |> 
   # filter(Metric == "Pos. Pred. Value") |>
   mutate(filter_agreeprop_str = case_when(
-    filter_agreeprop ~ "Removing markers with low\nMS-RNA agreement",
-    !filter_agreeprop ~ "Using all markers in screen"
+    filter_agreeprop ~ "Removing markers\nwith low MS-RNA\nagreement",
+    !filter_agreeprop ~ "Using all markers\nin screen"
   )) |> 
 ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
   geom_bar(stat='identity', position = 'dodge') +
@@ -337,4 +337,31 @@ ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
 ```{r}
 ggsave(here("figs/cytomarker_sens_spec.pdf"), width=8, height=5, scale = 0.75)
 ```
+
+```{r}
+df_senspec |> 
+  # filter(Metric == "Pos. Pred. Value") |>
+  mutate(filter_agreeprop_str = case_when(
+    filter_agreeprop ~ "Keep markers with\nhigh MS-RNA\nagreement",
+    !filter_agreeprop ~ "Using all markers\nin screen"
+  )) |> 
+ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
+  geom_bar(stat='identity', position = 'dodge') +
+  ggpubr::theme_pubr() +
+  labs(x = "Cell type", y = "Metric value") +
+  scale_fill_brewer(palette = "Accent") +
+  ylim(0, 1.1) +
+  scale_y_continuous(breaks = seq(0, 1.0, by = 0.4)) +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white')) +
+  # guides(fill=guide_legend(ncol =1)) +
+  facet_wrap(~ Metric, ncol=1) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill=guide_legend(ncol=1))
+```
+```{r}
+ggsave(here("figs/cytomarker_sens_spec_crs.pdf"), width=4, height=9, scale = 0.5)
+```
+
 
