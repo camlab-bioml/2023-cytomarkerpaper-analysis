@@ -358,5 +358,78 @@ ggsave(here(glue("figs/screen-vs-scrna.pdf")), width=6, height=4.5)
 saveRDS(sce_ct, here("data/processed/sce_scrna.rds"))
 ```
 
+# Version 2 - acknowledging there's lots in the screen
 
+
+We want ranks for 3 different scenarios:
+
+1. Top markers from the screen (highest variance)
+2. Random set of markers from the screen (to account for bias in how they were icked)
+3. Random set of markers
+
+`dfsum` is the relevant dataframe for cytof
+
+```{r}
+dfsum_mapped <- select(mapping, target = Input, gene_symbol) |> 
+  inner_join(dfsum)
+```
+
+```{r}
+genes_screen <- unique(dfsum_mapped$gene_symbol)
+
+mrkr_rank <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  mrkr_in_fm <- genes_screen[genes_screen %in% rownames(fm[[1]])]
+  
+  mrkr_logfc <- sapply(fm, function(f) {
+    f <- f[mrkr_in_fm,]
+    f$summary.logFC
+  })
+  
+  logfc_var <- apply(mrkr_logfc, 1, function(x) mean(abs(x)))
+  logfc_var <- rowMaxs(mrkr_logfc)
+  
+  # mrkr_rank <- sapply(fm, function(f) match(mrkr_in_fm, rownames(f)))
+  # best_rank <- matrixStats::rowMins(mrkr_rank)
+  # mr <- data.frame(mrkr_rank, row.names = mrkr_in_fm)
+  # mr <- drop_na(mr)
+  # mr <- unlist(mr)
+  
+  tibble(
+    cell_type = ct,
+    gene_symbol = mrkr_in_fm,
+    best_rank = logfc_var
+  )
+}) |> 
+  bind_rows()
+```
+
+```{r}
+dfj <- inner_join(mrkr_rank, dfsum_mapped)
+dfj
+```
+```{r}
+dfj$best_rank[dfj$best_rank > 2] <- 2
+# dfj
+
+markers_to_grab <- filter(dfj, expr_sd > 1.2)
+
+ggplot(dfj, aes(x = expr_mean, y = expr_sd, color = best_rank)) +
+  geom_point(alpha = 0.8) +
+  # stat_density_2d() +
+  facet_wrap(~ cell_type, nrow = 1, scales = "free_y") +
+    ggpubr::theme_pubr() +     
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(#legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  scale_color_viridis_c(name = "scRNA-seq subcluster specificity") +
+  labs(x = "Antibody screen expression mean", y = "Antibody screen s.d.") +
+  geom_label_repel(data = markers_to_grab, aes(label = gene_symbol), size=2, color='black')
+```
+
+```{r}
+ggsave(here("figs/link-scrna-cytof.pdf"), width=11, height=4)
+```
 

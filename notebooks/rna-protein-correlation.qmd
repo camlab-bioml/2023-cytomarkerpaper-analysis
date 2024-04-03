@@ -127,21 +127,26 @@ df_rna_sum <- group_by(df_rna, cluster, gene_symbol) |>
 ```{r}
 df_both <- inner_join(df_rna_sum, df_cytof, by = c("cluster", "gene_symbol")) 
 
+df_annot <- filter(df_both, expr_mean_cytof > 2.8, expr_mean_scrna > 1)
+
 df_both |> 
   ggplot(aes(x = expr_mean_cytof, y = expr_mean_scrna)) +
   # geom_density2d(color = scales::muted('red')) +
   geom_point(alpha = 0.5) +
-  facet_wrap(~ cluster, nrow = 1)+
+  facet_wrap(~ cluster, nrow = 1, scales = "free_y")+
   scale_x_log10() +
-  scale_y_log10() +
+  # scale_y_log10() +
     ggpubr::theme_pubr() +   
-  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA") +
+  labs(x = "Mean expression antibody screen", y = "Mean expression scRNA") +
   theme(strip.background = element_rect(fill = "grey95")) +
-  geom_smooth(method="lm", color=scales::muted('red')) +
+  stat_density2d(color='#4682B4') +
+  geom_smooth(color=scales::muted('red')) +
     theme(legend.title = element_blank(), 
         legend.position = 'bottom',
         strip.background = element_rect(fill='white'),
-        strip.text = element_text(face='bold')) 
+        strip.text = element_text(face='bold')) +
+  ylim(0, NA) +
+  geom_label_repel(data = df_annot, aes(label = gene_symbol), size=2.6)
 
 ```
 
@@ -214,7 +219,7 @@ plt1 <- df_both2 |>
   scale_x_log10() +
   scale_y_log10() +
     ggpubr::theme_pubclean() +   
-  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA", subtitle  = "Using all markers in screen") +
+  labs(x = "Mean expression scRNA", y = "Mean expression CyToF", subtitle  = "Using all markers in screen") +
   theme(strip.background = element_rect(fill = "grey95")) +
   geom_smooth(method="lm")
 
@@ -225,7 +230,7 @@ plt2 <- filter(df_both2, agree_prop == 1) |>
   scale_x_log10() +
   scale_y_log10() +
     ggpubr::theme_pubclean() +   
-  labs(x = "Mean expression CyTOF", y = "Mean expression scRNA", subtitle = "Removing markers with low MS-RNA agreement") +
+  labs(x = "Mean expression scRNA", y = "Mean expression CyToF", subtitle = "Removing markers with low MS-RNA agreement") +
   theme(strip.background = element_rect(fill = "grey95")) +
   geom_smooth(method="lm")
 ```
