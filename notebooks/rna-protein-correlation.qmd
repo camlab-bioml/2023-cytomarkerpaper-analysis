@@ -76,7 +76,9 @@ dfsc <- filter(dfsc, !is.na(target))
 
 dfsum <- group_by(dfsc, target, label) |> 
   summarize(expr_mean_cytof = mean(log1p(expression)),
-            expr_sd_cytof = sd(log1p(expression))) |> 
+            expr_sd_cytof = sd(log1p(expression))) |>
+  # summarize(expr_mean_cytof = mean((expression)),
+  #         expr_sd_cytof = sd((expression))) |> 
   ungroup() |> 
   dplyr::rename(cluster = label)
 ```
@@ -121,7 +123,14 @@ df_rna_sum <- group_by(df_rna, cluster, gene_symbol) |>
 ```
 
 ```{r}
+result_df <- df_both |> 
+  group_by(cluster) |> 
+  do(tidy(cor.test(.$expr_mean_cytof, .$expr_mean_scrna)))
 
+labelled_df <- result_df |>
+  mutate(label = sprintf("R=%.2f, p=%.2e", estimate, p.value)) |>
+  select(cluster, label) |> 
+  ungroup()
 ```
 
 ```{r}
@@ -130,10 +139,41 @@ df_both <- inner_join(df_rna_sum, df_cytof, by = c("cluster", "gene_symbol"))
 df_annot <- filter(df_both, expr_mean_cytof > 2.8, expr_mean_scrna > 1)
 
 df_both |> 
+  filter(expr_mean_scrna < 3.8) |> # This is so the p value labels look ok
   ggplot(aes(x = expr_mean_cytof, y = expr_mean_scrna)) +
   # geom_density2d(color = scales::muted('red')) +
   geom_point(alpha = 0.5) +
-  facet_wrap(~ cluster, nrow = 1, scales = "free_y")+
+  facet_wrap(~ cluster, nrow = 1)+
+  # scale_x_log10() +
+  # scale_y_log10() +
+    ggpubr::theme_pubr() +   
+  labs(x = "Mean log expression antibody screen", y = "Mean expression scRNA") +
+  theme(strip.background = element_rect(fill = "grey95")) +
+  stat_density2d(color='#4682B4') +
+  geom_smooth(color=scales::muted('red'), method="lm") +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  ylim(0, NA) +
+  # geom_label_repel(data = filter(df_annot, gene_symbol != "B2M"), aes(label = gene_symbol), size=2.6) +
+  geom_text(data = labelled_df, aes(label = label), x = 4, y = 4.2, size=3) +
+  ylim(NA, 4.5)
+
+```
+
+```{r}
+ggsave(here("figs/rna-protein-scatter.pdf"), width=8, height=3)
+```
+
+Collapse over cell types
+
+```{r}
+df_both |> 
+  ggplot(aes(x = expr_mean_cytof, y = expr_mean_scrna)) +
+  # geom_density2d(color = scales::muted('red')) +
+  geom_point(alpha = 0.5) +
+  # facet_wrap(~ cluster, nrow = 1, scales = "free_y")+
   scale_x_log10() +
   # scale_y_log10() +
     ggpubr::theme_pubr() +   
@@ -147,11 +187,29 @@ df_both |>
         strip.text = element_text(face='bold')) +
   ylim(0, NA) +
   geom_label_repel(data = df_annot, aes(label = gene_symbol), size=2.6)
-
 ```
 
+Turn this into boxplots
+
 ```{r}
-ggsave(here("figs/rna-protein-scatter.pdf"), width=8, height=3)
+df_both <- group_by(df_both, cluster) |> 
+  mutate(antibody_quantile = cut(expr_mean_cytof, 10, labels = paste0(10*1:10, "%")))
+
+ggplot(df_both, aes(x = antibody_quantile, y = expr_mean_scrna)) +
+  geom_boxplot(outlier.size=1, fill='grey95') +
+  facet_wrap(~ cluster, scales = "free_x", nrow=1) +
+  ggpubr::theme_pubr() +   
+  labs(x = "Antibody expression percentile", y = "Mean logcounts scRNA") +
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold'),
+        axis.text.x = element_text(size=5)) +
+  ylim(0, 3)
+```
+```{r}
+ggsave(here("figs/rna-protein-boxplot.pdf"), width=8, height=3)
 ```
 
 
