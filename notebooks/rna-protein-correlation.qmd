@@ -20,6 +20,7 @@ suppressPackageStartupMessages({
   library(glue)
   library(scran)
   library(scater)
+  library(broom)
 })
 ```
 
@@ -123,6 +124,12 @@ df_rna_sum <- group_by(df_rna, cluster, gene_symbol) |>
 ```
 
 ```{r}
+df_both <- inner_join(df_rna_sum, df_cytof, by = c("cluster", "gene_symbol")) 
+
+```
+
+
+```{r}
 result_df <- df_both |> 
   group_by(cluster) |> 
   do(tidy(cor.test(.$expr_mean_cytof, .$expr_mean_scrna)))
@@ -134,7 +141,6 @@ labelled_df <- result_df |>
 ```
 
 ```{r}
-df_both <- inner_join(df_rna_sum, df_cytof, by = c("cluster", "gene_symbol")) 
 
 df_annot <- filter(df_both, expr_mean_cytof > 2.8, expr_mean_scrna > 1)
 
@@ -427,4 +433,72 @@ ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
 ggsave(here("figs/cytomarker_sens_spec_crs.pdf"), width=4, height=9, scale = 0.5)
 ```
 
+Supplementary fig: T cells only
 
+```{r}
+df_senspec |> 
+  filter(grepl("CD", cluster)) |>
+  mutate(filter_agreeprop_str = case_when(
+    filter_agreeprop ~ "Removing markers\nwith low MS-RNA\nagreement",
+    !filter_agreeprop ~ "Using all markers\nin screen"
+  )) |> 
+ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
+  geom_bar(stat='identity', position = 'dodge') +
+  ggpubr::theme_pubr() +
+  labs(x = "Cell type", y = "Metric value") +
+  scale_fill_brewer(palette = "Accent") +
+  ylim(0, 1.1) +
+  scale_y_continuous(breaks = seq(0, 1.0, by = 0.1)) +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  # guides(fill=guide_legend(ncol =1)) +
+  facet_wrap(~ Metric) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+ggsave(here("figs/cytomarker_sens_spec_t_only.pdf"), width=4, height=4, scale = 1)
+```
+
+And figure for main paper using only all markers:
+
+```{r}
+df_senspec |> 
+  filter(!filter_agreeprop) |>
+ggplot(aes(y = value, x = cluster)) +
+  geom_bar(stat='identity', position = 'dodge') +
+  ggpubr::theme_pubr() +
+  labs(x = "Cell type", y = "Metric value") +
+  scale_fill_brewer(palette = "Accent") +
+  ylim(0, 1.1) +
+  scale_y_continuous(breaks = seq(0, 1.0, by = 0.1)) +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  # guides(fill=guide_legend(ncol =1)) +
+  facet_wrap(~ Metric) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+df_senspec |> 
+  filter(!filter_agreeprop) |>
+ggplot(aes(y = value, x = cluster, fill = Metric)) +
+  geom_bar(stat='identity', position = 'dodge') +
+  ggpubr::theme_pubr() +
+  labs(x = "Cell type", y = "Metric value") +
+  scale_fill_brewer(palette = "Accent") +
+  ylim(0, 1.1) +
+  scale_y_continuous(breaks = seq(0, 1.0, by = 0.1)) +
+    theme(legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  # guides(fill=guide_legend(ncol =1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = 'top')
+```
+```{r}
+ggsave(here("figs/cytomarker_sens_spec_no_ms.pdf"), width=4, height=4, scale = 1)
+```
