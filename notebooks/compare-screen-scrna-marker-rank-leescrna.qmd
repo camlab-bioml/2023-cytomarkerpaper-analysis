@@ -1,0 +1,616 @@
+---
+title: "Full single-cell analysis"
+format: html
+params:
+  cell_type: B
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(SingleCellExperiment)
+  library(readxl)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+  library(here)
+  library(singleCellTK)
+  library(ggrepel)
+  library(ggpubr)
+  library(zellkonverter)
+  library(stringr)
+  library(glue)
+  library(scran)
+  library(scater)
+})
+```
+
+```{r}
+set.seed(1234L)
+```
+
+# Sort the scRNA
+
+```{r}
+scescrna <- readH5AD(here("data/bdee03e4-14ee-4f3e-a225-3d12f032841f.h5ad"))
+scescrna <- scescrna[,scescrna$disease_general == "Healthy/Control"]
+```
+
+```{r}
+tt <- table(droplevels(scescrna$donor_id), scescrna$cell_type)
+
+Heatmap(tt)
+```
+```{r}
+rownames(scescrna)
+```
+
+
+
+```{r}
+assay(sce, 'logcounts') <- assay(sce, 'X')
+assay(sce, 'X') <- NULL
+```
+
+
+# Read in relevant data
+
+```{r}
+screen_scrna_ct_map <- read_excel(here("data/screen-scrna-celltype-match.xlsx"))
+# screen_scrna_ct_map <- filter(screen_scrna_ct_map, 
+                              # cell_type == params$cell_type)
+# stopifnot(nrow(screen_scrna_ct_map) == 1)
+```
+
+
+```{r}
+sce <- readRDS(here("data/sce_screen_subsample.rds"))
+cluster_interpretation <- read_excel(here("data/cluster-interpretation-nov23.xlsx"))
+
+```
+
+# Make screen and single-cell UMAPs
+
+```{r}
+reducedDim(sce,'UMAP') <- reducedDim(sce, 'seuratUMAP')
+```
+
+```{r}
+sce$cell_type <- plyr::mapvalues(sce$Seurat_louvain_Resolution0.5,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+```
+
+
+```{r}
+plotUMAP(sce, colour_by = "cell_type")
+```
+
+```{r}
+plot_density(sce, features = c("CD3", "CD4", "CD20", "CD68", "CD56", "CD8", "CD11b"))
+```
+
+
+
+```{r}
+sce_full <- readRDS(here("data/sce_screen_full.rds"))
+```
+
+
+```{r}
+sce_full$cell_type <- plyr::mapvalues(sce_full$predicted_label,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+```
+
+
+
+```{r}
+
+dfsc <- colData(sce_full) |> 
+  as.data.frame() |> 
+         select(expression = Nd148Di,
+                cluster = predicted_label,
+                cell_type,
+         target) |> 
+  as_tibble() 
+
+dfsc <- filter(dfsc, !is.na(target))
+
+```
+
+```{r}
+# dfsum <- group_by(dfsc, target, cell_type) |> 
+#   summarize(expr_mean = mean((expression)),
+#             expr_sd = sd((expression))) |> 
+#   ungroup()
+```
+
+Save cell metadata:
+
+```{r}
+colData(sce_full) |> 
+  as.data.frame() |> 
+  rownames_to_column('cell_id') |> 
+  write_tsv(here("data/cell_metadata_annotated.tsv"))
+```
+
+## Some QC plots
+
+```{r}
+sample_n(dfsc, 1e5) |> 
+  ggplot(aes(x = forcats::fct_reorder(target, expression), y = expression)) +
+  geom_boxplot() +
+  facet_wrap(~ cell_type, ncol=1) +
+  scale_y_log10() +
+  theme(axis.text.x = element_blank())
+```
+```{r}
+ggsave("figs/expression_by_ct.png", width=5, height=20)
+```
+
+```{r}
+# df_tmp <- sample_n(dfsc, 1e5) |> 
+df_sum <- dfsc |> 
+  group_by(cell_type, target) |> 
+  summarize(mean_expr = mean(log2(expression)),
+            sd_expr = sd(log2(expression))) |> 
+  ungroup()
+```
+
+
+```{r}
+ggplot(df_sum, aes(x = mean_expr, y = sd_expr, colour = cell_type)) +
+  geom_point()
+```
+```{r}
+fit <- loess(sd_expr ~ mean_expr, data = df_sum)
+df_sum$mean_corrected_sd <- df_sum$sd_expr - predict(fit)
+
+```
+
+```{r}
+ggplot(df_sum, aes(x = mean_expr, y = mean_corrected_sd, colour = cell_type)) +
+  geom_point()
+```
+
+
+
+# Contrast this to scRNA-seq PBMC data
+
+First map the screen to gene names
+
+```{r}
+mapping <- read_excel(here("data/aliasmatch_kieranreview-annots.xlsx"))
+```
+
+Need to clear this up:
+
+```{r}
+mapping <- mutate(mapping, gene_symbol = case_when(
+  !is.na(Corrected) ~ Corrected,
+  Alias != "NA" ~ Alias,
+  input_in_sce ~ Input
+))
+```
+
+
+
+
+
+## Pull off a specific cell type
+
+
+
+```{r}
+df_ct <- df_sum# filter(dfsum, cell_type == params$cell_type)
+
+df_ct$gene_symbol <- plyr::mapvalues(
+  from = str_to_upper(mapping$Input), 
+  to = str_to_upper(mapping$gene_symbol),
+  str_to_upper(df_ct$target)
+)
+
+df_no_doub <- filter(df_ct, cell_type != "Doublets")
+
+df_no_doub |> 
+ggplot(aes(x = mean_expr, y = mean_corrected_sd)) +
+  geom_point() +
+  geom_label_repel(aes(label = target), data = top_n(df_no_doub, 20, mean_corrected_sd)) +
+  geom_label_repel(aes(label = target), data = top_n(df_no_doub, 20, -mean_corrected_sd)) +
+  # geom_label_repel(aes(label = gene_symbol), data = filter(df_ct, expr_sd < 0.5, expr_mean > 4)) +
+  theme_pubclean() +
+  labs(x = "Mean expression", y = "Variance expression") +
+  facet_wrap(~cell_type)
+
+ggsave("figs/most-least-variable-markers.png", width=12, height=8)
+```
+
+```{r}
+write_csv(df_no_doub, "../data/antibody_screen_mean_sd.csv")
+```
+
+
+```{r}
+N_TOP_VAR <- 20
+
+top_var_screen <- group_by(df_ct, cell_type) |> 
+  top_n(N_TOP_VAR, mean_corrected_sd) |> 
+  distinct()
+
+bottom_var_screen <- group_by(df_ct, cell_type) |> 
+  top_n(N_TOP_VAR, -mean_corrected_sd)
+
+# top_var_screen <- filter(df_ct, expr_sd >1) |> pull('gene_symbol')
+# bottom_var_screen <- filter(df_ct, expr_sd < 0.5, expr_mean > 4) |> pull('gene_symbol')
+```
+
+```{r}
+# Pull out cell types we have matching equivalent populations in the screen for
+sce_ct <- sce[, grepl(paste0(screen_scrna_ct_map$str_grep, collapse = "|"), sce$cell_ontology_class)]
+```
+
+Let's map in the consensus cell type
+
+```{r}
+sce_ct$major_cell_type <- NULL
+
+for(i in 1:nrow(screen_scrna_ct_map)) {
+  cell_type <- screen_scrna_ct_map$cell_type[i]
+  str_grep <- screen_scrna_ct_map$str_grep[i]
+  sce_ct$major_cell_type[grepl(str_grep, sce_ct$cell_ontology_class)] <- cell_type
+}
+```
+
+
+
+```{r}
+sce_ct <- sce_ct[!duplicated(rowData(sce_ct)$feature_name),]
+rownames(sce_ct) <- rowData(sce_ct)$feature_name
+```
+
+```{r}
+sce_ct <- runUMAP(sce_ct)
+plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68"))
+```
+
+```{r}
+plotUMAP(sce_ct, colour_by = "cell_ontology_class")
+```
+
+
+```{r}
+# sce_ct <- singleCellTK::runSeuratScaleData(sce_ct, useAssay = 'logcounts')
+# sce_ct <- singleCellTK::runSeuratPCA(sce_ct)
+# sce_ct <- singleCellTK::runSeuratFindClusters(sce_ct)
+```
+```{r}
+# plotUMAP(sce_ct, colour_by = "Seurat_louvain_Resolution0.8")
+```
+```{r}
+sces <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  print(ct)
+  sce_expr <- sce_ct[, sce_ct$major_cell_type == ct]
+  sce_expr <- sce_expr[rowSums(logcounts(sce_expr)) > 1, ]
+  sce_expr <- singleCellTK::runSeuratScaleData(sce_expr, useAssay = 'logcounts')
+  sce_expr <- singleCellTK::runSeuratPCA(sce_expr)
+  sce_expr <- singleCellTK::runSeuratFindClusters(sce_expr)
+  sce_expr
+})
+
+names(sces) <- screen_scrna_ct_map$cell_type
+```
+
+
+
+```{r}
+# sce_expr <- sce_ct[rowSums(logcounts(sce_ct)) > 1, ]
+fms <- lapply(sces, function(sce) { findMarkers(sce, sce$Seurat_louvain_Resolution0.8)})
+```
+
+
+We want ranks for 3 different scenarios:
+
+1. Top markers from the screen (highest variance)
+2. Random set of markers from the screen (to account for bias in how they were icked)
+3. Random set of markers
+
+For (1):
+```{r}
+mrkr_rank <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  most_var_genes <- filter(top_var_screen, cell_type == ct) |> 
+    pull('gene_symbol')
+  most_var_genes <- most_var_genes[!is.na(most_var_genes)]
+  
+  mrkr_rank <- sapply(fm, function(f) match(most_var_genes, rownames(f)))
+  mr <- data.frame(mrkr_rank)# , row.names = top_var_screen)
+  mr <- drop_na(mr)
+  mr <- unlist(mr)
+  
+  tibble(
+    what = 'Gene shows high\nsubcluster variability\nin CyTOF screen',
+    rank = mr,
+    cell_type = ct
+  )
+}) |> 
+  bind_rows()
+```
+
+For (2):
+
+```{r}
+mr_random_screen <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  random_screen_genes <- sample(unique(df_ct$gene_symbol), N_TOP_VAR)
+  rank_random_screen <- sapply(fm, function(f) match(random_screen_genes, rownames(f)))
+  
+  mr <- data.frame(rank_random_screen)# , row.names = top_var_screen)
+  mr <- drop_na(mr)
+  mr <- unlist(mr)
+  
+  tibble(
+    what = 'Random\ngene set\n(screen)',
+    rank = mr,
+    cell_type = ct
+  )
+}) |> 
+  bind_rows()
+```
+
+For (3):
+
+
+```{r}
+
+mrkr_random <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  random_genes <- sample(rownames(sces[[ct]]), N_TOP_VAR)
+  rank_random <- sapply(fm, function(f) match(random_genes, rownames(f)))
+  
+  mr <- data.frame(rank_random)# , row.names = top_var_screen)
+  mr <- drop_na(mr)
+  mr <- unlist(mr)
+  
+  tibble(
+    what = 'Random\ngene set\n(all)',
+    rank = mr,
+    cell_type = ct
+  )
+}) |> 
+  bind_rows()
+```
+
+
+```{r}
+dfall <- bind_rows(
+  mrkr_rank,
+  mr_random_screen,
+  mrkr_random
+) 
+```
+
+
+```{r}
+cols <- c('Gene shows high\nsubcluster variability\nin CyTOF screen'='darkred',
+          'Random\ngene set\n(screen)' = '#AEC6CF',
+          'Random\ngene set\n(all)' = 'grey80')
+
+dfall$what <- factor(dfall$what, levels = names(cols))
+
+dfall |> 
+  ggplot(aes(x = what, fill = what, y = rank)) +
+  geom_boxplot() +
+  scale_fill_manual(values = cols) +
+  ggpubr::theme_pubr() +
+  labs(x = "Cell type", y = "Marker subcluster rank scRNA-seq") +
+  theme(legend.title = element_blank(), axis.text.x = element_blank(),
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold'),
+        axis.ticks.x = element_blank()) +
+  facet_wrap(~ cell_type, nrow=1) +
+  geom_signif(comparisons = list(names(cols)[c(1,2)], names(cols)[c(1,3)]),
+              y_position = c(30000, 35000)) +
+  ylim(0, 4e4)
+```
+
+
+
+
+```{r}
+ggsave(here(glue("figs/screen-vs-scrna.pdf")), width=6, height=4.5)
+```
+
+## Save processed expression objects
+
+```{r}
+saveRDS(sce_ct, here("data/processed/sce_scrna.rds"))
+```
+
+# Version 2 - acknowledging there's lots in the screen
+
+
+We want ranks for 3 different scenarios:
+
+1. Top markers from the screen (highest variance)
+2. Random set of markers from the screen (to account for bias in how they were icked)
+3. Random set of markers
+
+` = ` is the relevant dataframe for cytof
+
+```{r}
+# dfsum_mapped <- select(mapping, target = Input, gene_symbol) |> 
+#   inner_join(df_ct)
+```
+
+```{r}
+genes_screen <- unique(df_ct$gene_symbol)
+
+mrkr_rank <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  mrkr_in_fm <- genes_screen[genes_screen %in% rownames(fm[[1]])]
+  
+  # mrkr_logfc <- sapply(fm, function(f) {
+  #   f <- f[mrkr_in_fm,]
+  #   f$summary.logFC
+  # })
+  
+  mrkr_logfc <- sapply(fm, function(f) {
+    f <- f[mrkr_in_fm,]
+    f$Top
+  })
+
+  # logfc_var <- apply(mrkr_logfc, 1, function(x) mean(abs(x)))
+  # logfc_var <- rowMaxs(mrkr_logfc)
+  logfc_var <- rowMins(mrkr_logfc)
+  
+  # mrkr_rank <- sapply(fm, function(f) match(mrkr_in_fm, rownames(f)))
+  # best_rank <- matrixStats::rowMins(mrkr_rank)
+  # mr <- data.frame(mrkr_rank, row.names = mrkr_in_fm)
+  # mr <- drop_na(mr)
+  # mr <- unlist(mr)
+  
+  tibble(
+    cell_type = ct,
+    gene_symbol = mrkr_in_fm,
+    best_rank = logfc_var
+  )
+}) |> 
+  bind_rows()
+```
+
+```{r}
+dfj <- inner_join(mrkr_rank, df_ct)
+dfj
+```
+```{r}
+# dfj$best_rank[dfj$best_rank > 2] <- 2
+# dfj
+
+# markers_to_grab <- filter(dfj, expr_sd > 1.2)
+
+
+ggplot(dfj, aes(x = mean_expr, y = mean_corrected_sd, color = log10(best_rank))) +
+  geom_point(alpha = 0.8) +
+  # stat_density_2d() +
+  viridis::scale_color_viridis() +
+  facet_wrap(~ cell_type, nrow = 1, scales = "free") +
+    ggpubr::theme_pubr() +     
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(#legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  # scale_color_viridis_c(name = "scRNA-seq subcluster specificity") +
+  labs(x = "Antibody screen expression mean", y = "Antibody screen s.d.") #+
+  # geom_label_repel(data = markers_to_grab, aes(label = gene_symbol), size=2, color='black') #+
+  # scale_y_log10() +
+  # scale_x_log10() +
+```
+
+```{r}
+ggsave(here("figs/link-scrna-cytof.pdf"), width=11, height=4)
+```
+
+```{r}
+ggplot(dfj, aes(x = best_rank, y = mean_corrected_sd)) +
+  geom_point() +
+  facet_wrap(~ cell_type, scales = "free") +
+  geom_smooth(method="lm") +
+  scale_x_log10()
+```
+
+```{r}
+mutate(dfj, is_good = best_rank < 500) |> 
+  ggplot(aes(x = is_good, y = mean_corrected_sd)) +
+  geom_boxplot() +
+  facet_wrap(~ cell_type, scales = "free") +
+  geom_smooth()# +
+  # scale_x_log10()
+```
+
+
+```{r}
+library(broom)
+group_by(dfj, cell_type) |> 
+  do(tidy(cor.test(.$best_rank, .$expr_sd)))
+```
+# Some mean variance modelling
+
+```{r}
+with(dfj, qplot(expr_mean, expr_sd))
+```
+
+```{r}
+fit <- loess(expr_sd ~ expr_mean, data = dfj)
+dfj$predicted_sd <- predict(fit)
+dfj <- mutate(dfj,
+              residual_sd = expr_sd - predicted_sd)
+```
+
+```{r}
+
+ggplot(dfj, aes(x = best_rank, y = expr_sd, color = best_rank)) +
+  geom_point(alpha = 0.8) +
+  # stat_density_2d() +
+  facet_wrap(~ cell_type, nrow = 1, scales = "free") +
+    ggpubr::theme_pubr() +     
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(#legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  scale_color_viridis_c(name = "scRNA-seq subcluster specificity",
+                        limits = c(NA,3)) +
+  labs(x = "Antibody screen expression mean", y = "Antibody screen s.d.") +
+  geom_smooth()
+```
+```{r}
+group_by(dfj, cell_type) |> 
+  do(tidy(cor.test(.$best_rank, .$residual_sd)))
+```
+
+
+```{r}
+dfj <- mutate(dfj, is_hvg = expr_sd > 1.2 * predicted_sd)
+
+ggplot(dfj, aes(x = expr_mean)) +
+  geom_point(aes(y = expr_sd, color = is_hvg)) +
+  geom_line(aes(y = predicted_sd)) 
+  # scale_x_log10() +
+  # scale_y_log10()
+```
+
+```{r}
+ggplot(dfj, aes(x = is_hvg, y = best_rank)) +
+  geom_boxplot() +
+  facet_wrap(~ cell_type)
+```
+
+
+
+
+```{r}
+set.seed(123L)
+sc_logcounts_subsampled <- sce_full[, sample(ncol(sce_full), 5e4)]
+```
+
+```{r}
+library(scran)
+cts <- unique(sce_full$cell_type)
+
+dfgv <- lapply(cts, function(ct) {
+  lc <- logcounts(sc_logcounts_subsampled)[, sc_logcounts_subsampled$cell_type == ct]
+  gv <- modelGeneVar(sc_logcounts_subsampled)
+  rownames_to_column(as.data.frame(gv), 'gene_symbol') |> 
+    as_tibble() |> 
+    mutate(cell_type = ct)
+}) |> 
+  bind_rows()
+
+```
+
+```{r}
+
+```
+
