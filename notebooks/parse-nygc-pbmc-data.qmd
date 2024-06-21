@@ -1,0 +1,86 @@
+---
+title: "Parse NYGC data"
+format: html
+params:
+  cell_type: B
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(SingleCellExperiment)
+  library(readxl)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+  library(here)
+  library(singleCellTK)
+  library(ggrepel)
+  library(ggpubr)
+  library(zellkonverter)
+  library(stringr)
+  library(glue)
+  library(scran)
+  library(scater)
+})
+```
+
+```{r}
+set.seed(1234L)
+```
+
+
+
+```{r}
+sce <- readH5AD(here("data/nygc-pbmc.h5ad"))
+sce <- sce[, sample(ncol(sce), 1e4)]
+assay(sce, 'logcounts') <- assay(sce, 'X')
+# assay(sce, 'X') <- NULL
+```
+
+```{r}
+screen_scrna_ct_map <- read_excel(here("data/screen-scrna-celltype-match-lee.xlsx"))
+```
+
+
+
+```{r}
+# Pull out cell types we have matching equivalent populations in the screen for
+sce_ct <- sce[, grepl(paste0(screen_scrna_ct_map$str_grep, collapse = "|"), sce$cell_type)]
+```
+
+```{r}
+sce_ct$major_cell_type <- NULL
+
+for(i in 1:nrow(screen_scrna_ct_map)) {
+  print(i)
+  cell_type <- screen_scrna_ct_map$cell_type[i]
+  str_grep <- screen_scrna_ct_map$str_grep[i]
+  sce_ct$major_cell_type[grepl(str_grep, sce_ct$cell_type)] <- cell_type
+}
+```
+
+
+
+```{r}
+sce_ct <- sce_ct[!duplicated(rowData(sce_ct)$feature_name),]
+rownames(sce_ct) <- rowData(sce_ct)$feature_name
+```
+
+```{r}
+sce_ct <- runUMAP(sce_ct)
+plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68"))
+```
+
+```{r}
+plotUMAP(sce_ct, colour_by = "major_cell_type")
+```
+
+```{r}
+plotDots(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68", "NKG7", "GZMB", "FOXP3"),
+         group = "major_cell_type", center=TRUE, scale=TRUE)
+```
+
+```{r}
+saveRDS(sce_ct, here("results/nygc_pbmc_subsampled.rds"))
+```
+
