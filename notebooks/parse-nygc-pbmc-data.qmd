@@ -32,6 +32,7 @@ set.seed(1234L)
 
 ```{r}
 sce <- readH5AD(here("data/nygc-pbmc.h5ad"))
+sce <- sce[, sce$donor_id == "P5"]
 sce <- sce[, sample(ncol(sce), 1e4)]
 assay(sce, 'logcounts') <- assay(sce, 'X')
 # assay(sce, 'X') <- NULL
