@@ -41,21 +41,31 @@ rule interpret_clusters:
     shell:
         'quarto render notebooks/interpret-screen-clusters.qmd'
     
-    
+## Prepare the NYGC scRNA data
+rule parse_nygc_pbmc_data:
+    input:
+        'data/nygc-pbmc.h5ad',
+        'data/screen-scrna-celltype-match-lee.xlsx'
+    output:
+        'results/nygc_pbmc_subsampled.rds'
 
 rule make_rank_figs:
     input:
+        "data/sce_screen_subsample.rds",
+        "data/screen-scrna-celltype-match-lee.xlsx",
+        "data/cluster-interpretation-nov23.xlsx",
         'data/sce_screen_full.rds',
         "data/sce_screen_subsample.rds",
+        "data/aliasmatch_kieranreview-annots.xlsx",
+        "results/nygc_pbmc_subsampled.rds"
     output:
         outputs['rank-figs'],
-        "data/processed/sce_scrna.rds"
     shell:
-        'quarto render notebooks/compare-screen-scrna-marker-rank.qmd'
+        'quarto render notebooks/compare-screen-scrna-marker-rank-nygc.qmd'
 
 rule rna_protein_correlation:
     input:
-        'data/processed/sce_scrna.rds',
+        "results/nygc_pbmc_subsampled.rds",
         'data/cluster-interpretation-nov23.xlsx',
         'data/aliasmatch_kieranreview-annots.xlsx',
         'data/screen-scrna-celltype-match.xlsx'
@@ -63,4 +73,4 @@ rule rna_protein_correlation:
         outputs['fig-correlation'],
         outputs['fig-sens-spec'],
     shell:
-        'quarto render notebooks/rna-protein-correlation.qmd'
+        'quarto render notebooks/rna-protein-correlation-nygc.qmd'
