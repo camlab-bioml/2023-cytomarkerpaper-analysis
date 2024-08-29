@@ -42,7 +42,9 @@ heatmap_mammary <- Heatmap(mat_cor_norm, name = "Normalized\nexpression", column
         column_title_side = "bottom",
         row_title_side = "left",
         row_title = "Cell type",
-        col = viridis(ncol(mat_cor)))
+        col = viridis(ncol(mat_cor)),
+        width = unit(0.8, "snpc"), height = unit(0.2, "snpc"))
+# heatmap_mammary
 ```
 
 ```{r}
