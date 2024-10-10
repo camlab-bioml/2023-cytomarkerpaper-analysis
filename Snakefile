@@ -48,6 +48,8 @@ rule parse_nygc_pbmc_data:
         'data/screen-scrna-celltype-match-lee.xlsx'
     output:
         'results/nygc_pbmc_subsampled.rds'
+    shell:
+        'quarto render notebooks/parse-nygc-pbmc-data.qmd'
 
 rule make_rank_figs:
     input:

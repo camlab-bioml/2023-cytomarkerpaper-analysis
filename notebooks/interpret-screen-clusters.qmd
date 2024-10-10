@@ -144,6 +144,52 @@ ggplot(df, aes(x = `UMAP 1`, y = `UMAP 2`, colour = expression)) +
 ggsave(here("figs/UMAP_expression.png"), width=5.6, height=4, dpi=600)
 ```
 
+## Make cell type specific plots
+
+```{r}
+sce_full <- readRDS(here("data/sce_screen_full.rds"))
+```
+
+
+```{r}
+sce_full$cell_type <- plyr::mapvalues(sce_full$predicted_label,
+                                      cluster_interpretation$cluster,
+                                      cluster_interpretation$label)
+
+```
+
+
+```{r}
+df <- tibble(
+  cell_type = sce_full$cell_type,
+  target = sce_full$target,
+  expression = sce_full$Nd148Di
+)
+```
+
+```{r}
+dfsum <- group_by(df, cell_type, target) |> 
+  summarize(mean_expression = log1p(mean(expression))) |> 
+  drop_na() 
+```
+
+```{r}
+library(viridis)
+markers_to_plot <- c("CD11c", "CD2", "CD74", "CD11a", "CD49e", "CD4", "CD8a")
+
+filter(dfsum, target %in% markers_to_plot, cell_type != "Doublets") |> 
+  ggplot(aes(x = cell_type, y = target, fill = mean_expression)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme_minimal() +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(x = "Cell type", y = "Marker", fill = "Mean\nexpression")
+
+ggsave(here("figs/secondary_expression_heatmap.pdf"), width = 6, height = 5)
+  
+```
+
 
 
 
