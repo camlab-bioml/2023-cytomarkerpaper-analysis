@@ -49,7 +49,7 @@ heatmap_mammary <- Heatmap(mat_cor_norm, name = "Normalized\nexpression", column
 
 ```{r}
 # ggsave(here(glue("heatmap_mammary.pdf")), width=6, height=4.5)
-pdf('../figures/heatmap_mammary_single_cell.pdf', height = 4.5)
+pdf('../figs/heatmap_mammary_single_cell.pdf', height = 4.5)
 draw(heatmap_mammary)
 dev.off()
 ```

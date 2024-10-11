@@ -7,3 +7,10 @@
 .DS_Store
 
 .snakemake/
+# file is too large
+singlecells.csv
+*.h5ad
+*.rds
+results/
+figs/
+journal.pone*

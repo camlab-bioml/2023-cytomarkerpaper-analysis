@@ -97,8 +97,8 @@ dfsc <- filter(dfsc, !is.na(target))
 
 ```{r}
 dfsum <- group_by(dfsc, target, cell_type) |> 
-  summarize(expr_mean = mean(log1p(expression)),
-            expr_sd = sd(log1p(expression))) |> 
+  summarize(expr_mean = mean((expression)),
+            expr_sd = sd((expression))) |> 
   ungroup()
 ```
 
@@ -358,5 +358,188 @@ ggsave(here(glue("figs/screen-vs-scrna.pdf")), width=6, height=4.5)
 saveRDS(sce_ct, here("data/processed/sce_scrna.rds"))
 ```
 
+# Version 2 - acknowledging there's lots in the screen
 
+
+We want ranks for 3 different scenarios:
+
+1. Top markers from the screen (highest variance)
+2. Random set of markers from the screen (to account for bias in how they were icked)
+3. Random set of markers
+
+`dfsum` is the relevant dataframe for cytof
+
+```{r}
+dfsum_mapped <- select(mapping, target = Input, gene_symbol) |> 
+  inner_join(dfsum)
+```
+
+```{r}
+genes_screen <- unique(dfsum_mapped$gene_symbol)
+
+mrkr_rank <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
+  fm <- fms[[ct]]
+  mrkr_in_fm <- genes_screen[genes_screen %in% rownames(fm[[1]])]
+  
+  # mrkr_logfc <- sapply(fm, function(f) {
+  #   f <- f[mrkr_in_fm,]
+  #   f$summary.logFC
+  # })
+  
+  mrkr_logfc <- sapply(fm, function(f) {
+    f <- f[mrkr_in_fm,]
+    f$Top
+  })
+  
+  # logfc_var <- apply(mrkr_logfc, 1, function(x) mean(abs(x)))
+  # logfc_var <- rowMaxs(mrkr_logfc)
+  logfc_var <- rowMins(mrkr_logfc)
+  
+  # mrkr_rank <- sapply(fm, function(f) match(mrkr_in_fm, rownames(f)))
+  # best_rank <- matrixStats::rowMins(mrkr_rank)
+  # mr <- data.frame(mrkr_rank, row.names = mrkr_in_fm)
+  # mr <- drop_na(mr)
+  # mr <- unlist(mr)
+  
+  tibble(
+    cell_type = ct,
+    gene_symbol = mrkr_in_fm,
+    best_rank = logfc_var
+  )
+}) |> 
+  bind_rows()
+```
+
+```{r}
+dfj <- inner_join(mrkr_rank, dfsum_mapped)
+dfj
+```
+```{r}
+# dfj$best_rank[dfj$best_rank > 2] <- 2
+# dfj
+
+markers_to_grab <- filter(dfj, expr_sd > 1.2)
+
+ggplot(dfj, aes(x = expr_mean, y = expr_sd, color = best_rank > 500)) +
+  geom_point(alpha = 0.8) +
+  # stat_density_2d() +
+  facet_wrap(~ cell_type, nrow = 1, scales = "free") +
+    ggpubr::theme_pubr() +     
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(#legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  # scale_color_viridis_c(name = "scRNA-seq subcluster specificity") +
+  labs(x = "Antibody screen expression mean", y = "Antibody screen s.d.") +
+  geom_label_repel(data = markers_to_grab, aes(label = gene_symbol), size=2, color='black') #+
+  # scale_y_log10() +
+  # scale_x_log10()
+```
+
+```{r}
+ggsave(here("figs/link-scrna-cytof.pdf"), width=11, height=4)
+```
+
+```{r}
+ggplot(dfj, aes(x = best_rank, y = expr_sd)) +
+  geom_point() +
+  facet_wrap(~ cell_type, scales = "free") +
+  geom_smooth(method="lm") +
+  scale_x_log10()
+```
+
+```{r}
+mutate(dfj, is_good = best_rank < 500) |> 
+  ggplot(aes(x = is_good, y = expr_sd)) +
+  geom_boxplot() +
+  facet_wrap(~ cell_type, scales = "free") +
+  geom_smooth()# +
+  # scale_x_log10()
+```
+
+
+```{r}
+library(broom)
+group_by(dfj, cell_type) |> 
+  do(tidy(cor.test(.$best_rank, .$expr_sd)))
+```
+# Some mean variance modelling
+
+```{r}
+with(dfj, qplot(expr_mean, expr_sd))
+```
+
+```{r}
+fit <- loess(expr_sd ~ expr_mean, data = dfj)
+dfj$predicted_sd <- predict(fit)
+dfj <- mutate(dfj,
+              residual_sd = expr_sd - predicted_sd)
+```
+
+```{r}
+
+ggplot(dfj, aes(x = best_rank, y = expr_sd, color = best_rank)) +
+  geom_point(alpha = 0.8) +
+  # stat_density_2d() +
+  facet_wrap(~ cell_type, nrow = 1, scales = "free") +
+    ggpubr::theme_pubr() +     
+  theme(strip.background = element_rect(fill = "grey95")) +
+    theme(#legend.title = element_blank(), 
+        legend.position = 'bottom',
+        strip.background = element_rect(fill='white'),
+        strip.text = element_text(face='bold')) +
+  scale_color_viridis_c(name = "scRNA-seq subcluster specificity",
+                        limits = c(NA,3)) +
+  labs(x = "Antibody screen expression mean", y = "Antibody screen s.d.") +
+  geom_smooth()
+```
+```{r}
+group_by(dfj, cell_type) |> 
+  do(tidy(cor.test(.$best_rank, .$residual_sd)))
+```
+
+
+```{r}
+dfj <- mutate(dfj, is_hvg = expr_sd > 1.2 * predicted_sd)
+
+ggplot(dfj, aes(x = expr_mean)) +
+  geom_point(aes(y = expr_sd, color = is_hvg)) +
+  geom_line(aes(y = predicted_sd)) 
+  # scale_x_log10() +
+  # scale_y_log10()
+```
+
+```{r}
+ggplot(dfj, aes(x = is_hvg, y = best_rank)) +
+  geom_boxplot() +
+  facet_wrap(~ cell_type)
+```
+
+
+
+
+```{r}
+set.seed(123L)
+sc_logcounts_subsampled <- sce_full[, sample(ncol(sce_full), 5e4)]
+```
+
+```{r}
+library(scran)
+cts <- unique(sce_full$cell_type)
+
+dfgv <- lapply(cts, function(ct) {
+  lc <- logcounts(sc_logcounts_subsampled)[, sc_logcounts_subsampled$cell_type == ct]
+  gv <- modelGeneVar(sc_logcounts_subsampled)
+  rownames_to_column(as.data.frame(gv), 'gene_symbol') |> 
+    as_tibble() |> 
+    mutate(cell_type = ct)
+}) |> 
+  bind_rows()
+
+```
+
+```{r}
+
+```
 
