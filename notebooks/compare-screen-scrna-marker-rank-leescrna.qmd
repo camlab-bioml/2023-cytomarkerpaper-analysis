@@ -144,8 +144,10 @@ sample_n(dfsc, 1e5) |>
   scale_y_log10() +
   theme(axis.text.x = element_blank())
 ```
+
 ```{r}
-ggsave("figs/expression_by_ct.png", width=5, height=20)
+ggsave(here("figs/expression_by_ct.png"), width=5, height=20)
+=======
 ```
 
 ```{r}
@@ -222,7 +224,8 @@ ggplot(aes(x = mean_expr, y = mean_corrected_sd)) +
   labs(x = "Mean expression", y = "Variance expression") +
   facet_wrap(~cell_type)
 
-ggsave("figs/most-least-variable-markers.png", width=12, height=8)
+ggsave(here("figs/most-least-variable-markers.png"), width=12, height=8)
+
 ```
 
 ```{r}

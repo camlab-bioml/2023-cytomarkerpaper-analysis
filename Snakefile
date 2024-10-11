@@ -11,7 +11,8 @@ outputs = {
     'fig-umap-celltype': 'figs/UMAP_celltype.png',
     'fig-umap-expression': 'figs/UMAP_expression.png',
     'fig-correlation': "figs/rna-protein-scatter.pdf",
-    'fig-sens-spec': 'figs/cytomarker_sens_spec.pdf'
+    'fig-sens-spec': 'figs/cytomarker_sens_spec.pdf',
+    'fig-mammary-heatmap-single-cell': 'figs/heatmap_mammary_single_cell.pdf'
 }
 
 
@@ -45,7 +46,8 @@ rule interpret_clusters:
 rule parse_nygc_pbmc_data:
     input:
         'data/nygc-pbmc.h5ad',
-        'data/screen-scrna-celltype-match-lee.xlsx'
+        'data/screen-scrna-celltype-match-lee.xlsx',
+        'data/sce_screen_full.rds'
     output:
         'results/nygc_pbmc_subsampled.rds'
     shell:
@@ -76,3 +78,11 @@ rule rna_protein_correlation:
         outputs['fig-sens-spec'],
     shell:
         'quarto render notebooks/rna-protein-correlation-nygc.qmd'
+
+rule mammary_single_cell_heatmap:
+    input:
+        'data/mammary_expression_heatmap.csv'
+    output:
+        outputs['fig-mammary-heatmap-single-cell']
+    shell:
+        'quarto render notebooks/mammary-single-cell-heatmap.qmd'
