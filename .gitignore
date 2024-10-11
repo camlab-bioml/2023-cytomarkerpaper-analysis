@@ -16,3 +16,4 @@ figs/
 journal.pone*
 depmap/
 cell_metadata_annotated.tsv
+antibody_screen_mean_sd.csv
