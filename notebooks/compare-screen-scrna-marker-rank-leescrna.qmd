@@ -147,6 +147,7 @@ sample_n(dfsc, 1e5) |>
 
 ```{r}
 ggsave(here("figs/expression_by_ct.png"), width=5, height=20)
+=======
 ```
 
 ```{r}
@@ -224,6 +225,7 @@ ggplot(aes(x = mean_expr, y = mean_corrected_sd)) +
   facet_wrap(~cell_type)
 
 ggsave(here("figs/most-least-variable-markers.png"), width=12, height=8)
+
 ```
 
 ```{r}

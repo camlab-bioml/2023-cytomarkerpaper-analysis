@@ -48,7 +48,6 @@ rule parse_nygc_pbmc_data:
         'data/nygc-pbmc.h5ad',
         'data/screen-scrna-celltype-match-lee.xlsx',
         'data/sce_screen_full.rds'
-
     output:
         'results/nygc_pbmc_subsampled.rds'
     shell:
@@ -87,4 +86,3 @@ rule mammary_single_cell_heatmap:
         outputs['fig-mammary-heatmap-single-cell']
     shell:
         'quarto render notebooks/mammary-single-cell-heatmap.qmd'
-
