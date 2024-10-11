@@ -6,10 +6,12 @@ Code to reproduce the figures and results from the cytomarker paper.
 
 Prior to running, the following data files need to be placed in the `data` directory:
 
-- `singlecells.csv`
+- `singlecells.csv` from the cytomarker paper (# TODO: add the link here)
 - The nygc multimodal pbmc data set from: `https://datasets.cellxgene.cziscience.com/de42a173-458a-429c-b129-c26bcd3adb3b.h5ad`, 
 named as `nygc-pbmc.h5ad`
 - The transcriptome and proteome data from Nicolet et al. 2022 from `https://doi.org/10.1371/journal.pone.0276294.s006`
+- The protein-RNA correlation table from the Gygi Lab here: https://gygi.hms.harvard.edu/data/ccle/Table_S4_Protein_RNA_Correlation_and_Enrichments.xlsx, put
+into the `depmap` sub-directory in `data`
 
 ## Running
 

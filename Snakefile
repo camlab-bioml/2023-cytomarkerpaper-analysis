@@ -48,6 +48,7 @@ rule parse_nygc_pbmc_data:
         'data/nygc-pbmc.h5ad',
         'data/screen-scrna-celltype-match-lee.xlsx',
         'data/sce_screen_full.rds'
+
     output:
         'results/nygc_pbmc_subsampled.rds'
     shell:

@@ -14,3 +14,5 @@ singlecells.csv
 results/
 figs/
 journal.pone*
+depmap/
+cell_metadata_annotated.tsv
