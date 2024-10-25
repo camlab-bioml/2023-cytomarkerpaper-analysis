@@ -6,7 +6,7 @@ Code to reproduce the figures and results from the cytomarker paper.
 
 Prior to running, the following data files need to be placed in the `data` directory:
 
-- `singlecells.csv` from the cytomarker paper (# TODO: add the link here)
+- `singlecells.csv` from the cytomarker paper data (download from zenodo here: https://zenodo.org/records/13891857)
 - The nygc multimodal pbmc data set from: `https://datasets.cellxgene.cziscience.com/de42a173-458a-429c-b129-c26bcd3adb3b.h5ad`, 
 named as `nygc-pbmc.h5ad`
 - The transcriptome and proteome data from Nicolet et al. 2022 from `https://doi.org/10.1371/journal.pone.0276294.s006`
