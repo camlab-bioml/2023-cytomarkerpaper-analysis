@@ -1,0 +1,55 @@
+---
+title: "Single cell heatmap, normalized (Mammary, Tabula Sapiens)"
+format: html
+---
+
+```{r}
+suppressPackageStartupMessages({
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(glue)
+library(stringr)
+library(ggpubr)
+library(ggsci)
+
+#library(rmote)
+#start_rmote(port=4339)
+
+library(circlize)
+library(ComplexHeatmap)
+library(here)
+library(dplyr)
+library(viridis)
+})
+```
+
+```{r}
+colMax <- function(data) sapply(data, max, na.rm = TRUE)
+print(here())
+
+```
+
+```{r}
+mat_cor <- read.csv(here("data/mammary_expression_heatmap.csv"))
+row.names(mat_cor) <- mat_cor$X
+mat_cor <- mat_cor |> select(-c(X))
+# mat_cor[mat_cor < 0] <- 0
+mat_cor_norm <- scale(mat_cor, center=FALSE, scale=colMax(mat_cor))
+# mat_cor_norm[is.na(mat_cor_norm)] <- 0
+
+heatmap_mammary <- Heatmap(mat_cor_norm, name = "Normalized\nexpression", column_title = "Marker",
+        column_title_side = "bottom",
+        row_title_side = "left",
+        row_title = "Cell type",
+        col = viridis(ncol(mat_cor)),
+        width = unit(0.8, "snpc"), height = unit(0.2, "snpc"))
+# heatmap_mammary
+```
+
+```{r}
+# ggsave(here(glue("heatmap_mammary.pdf")), width=6, height=4.5)
+pdf('../figs/heatmap_mammary_single_cell.pdf', height = 4.5)
+draw(heatmap_mammary)
+dev.off()
+```

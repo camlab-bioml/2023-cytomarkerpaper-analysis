@@ -44,14 +44,18 @@ colnames(sce) <- paste0("cell_", seq_len(ncol(sce)))
 assay(sce, 'seuratNormData') <- assay(sce, 'logcounts')
 
 message("Scale & PCA...")
-sce <- singleCellTK::runSeuratScaleData(sce)
+sce <- singleCellTK::runSeuratScaleData(sce, useAssay = "logcounts")
 
 
 set.seed(123L)
 sce_subsample <- sce[, sample(ncol(sce), 1e4)]
 sce_subsample@metadata <- list()
 
-sce_subsample <- singleCellTK::runSeuratPCA(sce_subsample)
+# TODO: determine if the highly variable genes are needed for the PCA & UMAP
+# sce_subsample <- singleCellTK::runSeuratFindHVG(sce_subsample, useAssay = "logcounts")
+# sce_subsample <- singleCellTK::setTopHVG(sce_subsample, method = "vst", featureSubsetName = "hvf")
+
+sce_subsample <- singleCellTK::runSeuratPCA(sce_subsample, useFeatureSubset=NULL)
 
 message("UMAP...")
 sce_subsample <- singleCellTK::runSeuratUMAP(sce_subsample)

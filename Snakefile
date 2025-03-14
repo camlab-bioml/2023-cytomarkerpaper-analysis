@@ -47,7 +47,8 @@ rule interpret_clusters:
 rule parse_nygc_pbmc_data:
     input:
         'data/nygc-pbmc.h5ad',
-        'data/screen-scrna-celltype-match-lee.xlsx'
+        'data/screen-scrna-celltype-match-lee.xlsx',
+        'data/sce_screen_full.rds'
     output:
         'results/nygc_pbmc_subsampled-{patient}.rds'
     shell:
@@ -80,3 +81,12 @@ rule rna_protein_correlation:
 
     shell:
         'quarto render notebooks/rna-protein-correlation-nygc.qmd -P rna_protein_scatter_path={output.rna_protein_scatter_path} -P cytomarker_sens_spec_path={output.cytomarker_sens_spec_path} -P cytomarker_sens_spec_no_ms_path={output.cytomarker_sens_spec_no_ms_path}'
+        'quarto render notebooks/rna-protein-correlation-nygc.qmd'
+
+rule mammary_single_cell_heatmap:
+    input:
+        'data/mammary_expression_heatmap.csv'
+    output:
+        outputs['fig-mammary-heatmap-single-cell']
+    shell:
+        'quarto render notebooks/mammary-single-cell-heatmap.qmd'

@@ -115,7 +115,7 @@ sample_n(dfsc, 1e5) |>
   theme(axis.text.x = element_blank())
 ```
 ```{r}
-ggsave("figs/expression_by_ct.png", width=5, height=20)
+ggsave(here("figs/expression_by_ct.png"), width=5, height=20)
 ```
 
 ```{r}
@@ -192,7 +192,7 @@ ggplot(aes(x = mean_expr, y = mean_corrected_sd)) +
   labs(x = "Mean expression", y = "Variance expression") +
   facet_wrap(~cell_type)
 
-ggsave("figs/most-least-variable-markers.png", width=12, height=8)
+ggsave(here("figs/most-least-variable-markers.png"), width=12, height=8)
 ```
 
 ```{r}
@@ -265,8 +265,11 @@ sces <- lapply(screen_scrna_ct_map$cell_type, function(ct) {
   print(ct)
   sce_expr <- sce_ct[, sce_ct$major_cell_type == ct]
   sce_expr <- sce_expr[rowSums(logcounts(sce_expr)) > 1, ]
-  sce_expr <- singleCellTK::runSeuratScaleData(sce_expr, useAssay = 'logcounts')
-  sce_expr <- singleCellTK::runSeuratPCA(sce_expr)
+  assay(sce_expr, 'seuratNormData') <- assay(sce_expr, 'logcounts')
+  sce_expr <- singleCellTK::runSeuratScaleData(sce_expr, useAssay = "logcounts")
+  # sce_expr <- singleCellTK::runSeuratFindHVG(sce_expr, useAssay = "logcounts")
+  # sce_expr <- singleCellTK::setTopHVG(sce_expr, method = "vst", featureSubsetName = "hvf")
+  sce_expr <- singleCellTK::runSeuratPCA(sce_expr, useFeatureSubset=NULL)
   # sce_expr <- singleCellTK::runMNNCorrect(sce_expr, batch = "donor_id")
   sce_expr <- singleCellTK::runSeuratFindClusters(sce_expr, resolution=0.5)
   sce_expr
