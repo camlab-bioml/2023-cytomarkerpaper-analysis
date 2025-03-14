@@ -3,6 +3,8 @@ title: "Parse NYGC data"
 format: html
 params:
   cell_type: B
+  patient: P5
+  output_rds: results/nygc_pbmc_subsampled.rds
 ---
 
 ```{r}
@@ -32,7 +34,7 @@ set.seed(1234L)
 
 ```{r}
 sce <- readH5AD(here("data/nygc-pbmc.h5ad"))
-sce <- sce[, sce$donor_id == "P5"]
+sce <- sce[, sce$donor_id == params$patient]
 sce <- sce[, sample(ncol(sce), 1e4)]
 assay(sce, 'logcounts') <- assay(sce, 'X')
 # assay(sce, 'X') <- NULL
@@ -69,7 +71,7 @@ rownames(sce_ct) <- rowData(sce_ct)$feature_name
 
 ```{r}
 sce_ct <- runUMAP(sce_ct)
-plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68"))
+# plot_density(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68"))
 ```
 
 ```{r}
@@ -82,6 +84,6 @@ plotDots(sce_ct, features = c("CD3D", "CD4", "CD8A", "MS4A1", "PTPRC", "CD68", "
 ```
 
 ```{r}
-saveRDS(sce_ct, here("results/nygc_pbmc_subsampled.rds"))
+saveRDS(sce_ct, here(params$output_rds))
 ```
 
