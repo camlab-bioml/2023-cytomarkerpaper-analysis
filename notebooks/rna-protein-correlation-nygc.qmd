@@ -1,6 +1,17 @@
 ---
 title: "RNA protein correlation analysis"
 format: html
+params:
+  input_rds: results/nygc_pbmc_subsampled.rds
+  rna_protein_scatter_path: figs/rna_protein_scatter.pdf
+  # rna_protein_scatter_remove_lowcor_path
+  # rna_protein_boxplot_path
+  # mean_expression_comparison_path
+  cytomarker_sens_spec_path: figs/cytomarker_sens_spec.pdf
+  # cytomarker_sens_spec_crs_path
+  # cytomarker_sens_spec_t_only_path
+  cytomarker_sens_spec_no_ms_path: figs/cytomarker_sens_spec_no_ms.pdf
+    
 ---
 
 
@@ -35,7 +46,7 @@ Read in needed data:
 cluster_interpretation <- read_excel(here("data/cluster-interpretation-nov23.xlsx"))
 cluster_interpretation$cluster <- as.factor(cluster_interpretation$cluster)
 
-sce_rna <- readRDS(here("results/nygc_pbmc_subsampled.rds"))
+sce_rna <- readRDS(here(params$input_rds))
 
 sce_cytof <- readRDS(here("data/sce_screen_full.rds"))
 
@@ -169,7 +180,7 @@ df_both |>
 ```
 
 ```{r}
-ggsave(here("figs/rna-protein-scatter.pdf"), width=8, height=3)
+ggsave(here(params$rna_protein_scatter_path), width=8, height=3)
 ```
 
 ### Let's bring in CCLE RNA<->protein correlation
@@ -229,7 +240,7 @@ df_both2 |>
 
 ```
 ```{r}
-ggsave(here("figs/rna-protein-scatter-remove-lowcor.pdf"), width=8, height=3)
+# ggsave(here("figs/rna-protein-scatter-remove-lowcor.pdf"), width=8, height=3)
 ```
 
 
@@ -276,7 +287,7 @@ ggplot(df_both, aes(x = antibody_quantile, y = expr_mean_scrna)) +
   ylim(0, 3)
 ```
 ```{r}
-ggsave(here("figs/rna-protein-boxplot.pdf"), width=8, height=3)
+# ggsave(here("figs/rna-protein-boxplot.pdf"), width=8, height=3)
 ```
 
 
@@ -366,7 +377,7 @@ cowplot::plot_grid(plt1, plt2, ncol=1)
 
 
 ```{r}
-ggsave(here("figs/mean_expression_comparison.pdf"), width=8, height=5)
+# ggsave(here("figs/mean_expression_comparison.pdf"), width=8, height=5)
 ```
 
 
@@ -426,8 +437,8 @@ get_sens_spec <- function(clusterm, filter_agreeprop = TRUE) {
   conf_matrix <- confusionMatrix(data = factor(df_bin_tmp$is_high_scrna, levels=c(1,0)), reference=factor(df_bin_tmp$is_high_cytof, levels=c(1,0)))
   tibble(
     cluster = clusterm,
-    value = c(conf_matrix$byClass['Sensitivity'], conf_matrix$byClass['Specificity'], conf_matrix$byClass['Pos Pred Value']),
-    Metric = c("Sensitivity", "Specificity", "Pos. Pred. Value"),
+    value = c(conf_matrix$byClass['Sensitivity'], conf_matrix$byClass['Specificity'], conf_matrix$byClass['Pos Pred Value'], conf_matrix$byClass['F1']),
+    Metric = c("Sens.", "Spec.", "PPV", "F1"),
     filter_agreeprop = filter_agreeprop
   )
 }
@@ -461,11 +472,11 @@ ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
         strip.background = element_rect(fill='white'),
         strip.text = element_text(face='bold')) +
   # guides(fill=guide_legend(ncol =1)) +
-  facet_wrap(~ Metric) + 
+  facet_wrap(~ Metric, nrow=1) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 ```{r}
-ggsave(here("figs/cytomarker_sens_spec.pdf"), width=8, height=5, scale = 0.75)
+ggsave(here(params$cytomarker_sens_spec_path), width=8, height=5, scale = 0.75)
 ```
 
 ```{r}
@@ -491,7 +502,7 @@ ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
   guides(fill=guide_legend(ncol=1))
 ```
 ```{r}
-ggsave(here("figs/cytomarker_sens_spec_crs.pdf"), width=4, height=9, scale = 0.5)
+# ggsave(here("figs/cytomarker_sens_spec_crs.pdf"), width=4, height=9, scale = 0.5)
 ```
 
 Supplementary fig: T cells only
@@ -515,11 +526,11 @@ ggplot(aes(fill = filter_agreeprop_str, y = value, x = cluster)) +
         strip.background = element_rect(fill='white'),
         strip.text = element_text(face='bold')) +
   # guides(fill=guide_legend(ncol =1)) +
-  facet_wrap(~ Metric) + 
+  facet_wrap(~ Metric, nrow=1) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 ```{r}
-ggsave(here("figs/cytomarker_sens_spec_t_only.pdf"), width=4, height=4, scale = 1)
+# ggsave(here("figs/cytomarker_sens_spec_t_only.pdf"), width=4, height=4, scale = 1)
 ```
 
 And figure for main paper using only all markers:
@@ -561,5 +572,5 @@ ggplot(aes(y = value, x = cluster, fill = Metric)) +
         legend.position = 'top')
 ```
 ```{r}
-ggsave(here("figs/cytomarker_sens_spec_no_ms.pdf"), width=4, height=4, scale = 1)
+ggsave(here(params$cytomarker_sens_spec_no_ms_path), width=4, height=4, scale = 1)
 ```

@@ -70,23 +70,25 @@ rule parse_nygc_pbmc_data:
 
 rule rna_protein_correlation:
     input:
-        "results/nygc_pbmc_subsampled-{patient}.rds",
-        'data/cluster-interpretation-nov23.xlsx',
-        'data/aliasmatch_kieranreview-annots.xlsx',
-        'data/screen-scrna-celltype-match.xlsx'
+        input_rds="results/nygc_pbmc_subsampled-{patient}.rds",
+        cluster_int='data/cluster-interpretation-nov23.xlsx',
+        annots='data/aliasmatch_kieranreview-annots.xlsx',
+        match='data/screen-scrna-celltype-match.xlsx'
     output:
         rna_protein_scatter_path="figs/rna-protein-scatter-{patient}.pdf",
         cytomarker_sens_spec_path="figs/cytomarker_sens_spec-{patient}.pdf",
         cytomarker_sens_spec_no_ms_path="figs/cytomarker_sens_spec_no_ms-{patient}.pdf"
 
     shell:
-        'quarto render notebooks/rna-protein-correlation-nygc.qmd -P rna_protein_scatter_path={output.rna_protein_scatter_path} -P cytomarker_sens_spec_path={output.cytomarker_sens_spec_path} -P cytomarker_sens_spec_no_ms_path={output.cytomarker_sens_spec_no_ms_path}'
-        'quarto render notebooks/rna-protein-correlation-nygc.qmd'
+        'quarto render notebooks/rna-protein-correlation-nygc.qmd -P input_rds={input.input_rds} -P rna_protein_scatter_path={output.rna_protein_scatter_path} -P cytomarker_sens_spec_path={output.cytomarker_sens_spec_path} -P cytomarker_sens_spec_no_ms_path={output.cytomarker_sens_spec_no_ms_path}'
 
-rule mammary_single_cell_heatmap:
-    input:
-        'data/mammary_expression_heatmap.csv'
-    output:
-        outputs['fig-mammary-heatmap-single-cell']
-    shell:
-        'quarto render notebooks/mammary-single-cell-heatmap.qmd'
+
+## TODO March 14th: the below has been commented out but needs
+## revisited before final publication
+# rule mammary_single_cell_heatmap:
+#     input:
+#         'data/mammary_expression_heatmap.csv'
+#     output:
+#         outputs['fig-mammary-heatmap-single-cell']
+#     shell:
+#         'quarto render notebooks/mammary-single-cell-heatmap.qmd'
