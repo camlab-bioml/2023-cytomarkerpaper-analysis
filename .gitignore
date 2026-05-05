@@ -17,3 +17,6 @@ journal.pone*
 depmap/
 cell_metadata_annotated.tsv
 antibody_screen_mean_sd.csv
+imc-analysis/*.csv
+imc-analysis/*.h5ad
+.ipynb_checkpoints/
